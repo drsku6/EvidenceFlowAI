@@ -37,6 +37,41 @@ const markdownComponents = {
     td: ({node, ...props}) => <td className="border border-brand-border px-3 py-2" {...props} />,
 };
 
+const examplePrompts = [
+  {
+    title: 'Start a patient case',
+    prompt: '78M with hx of CAD, HFpEF presents with 3 days of worsening SOB and LE edema.',
+  },
+  {
+    title: 'Ask a clinical question',
+    prompt: '/ask_the_expert What is the evidence for using steroids in community-acquired pneumonia?',
+  },
+  {
+    title: 'Run a clinical simulation',
+    prompt: '/run_simulation A 55-year-old patient presents with chest pain. Go.',
+  }
+];
+
+const ExamplePrompts: React.FC<{ onPromptClick: (prompt: string) => void }> = ({ onPromptClick }) => (
+    <div className="w-full mt-10">
+      <h3 className="text-sm font-medium text-brand-text-secondary mb-3 text-center">Or try one of these examples:</h3>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 max-w-4xl mx-auto">
+        {examplePrompts.map((p, i) => (
+          <button
+            key={i}
+            onClick={() => onPromptClick(p.prompt)}
+            className="p-4 bg-brand-surface rounded-lg shadow-sm hover:shadow-md transition-shadow text-left border border-brand-border h-full flex flex-col justify-between hover:border-brand-accent/50"
+          >
+            <div>
+              <p className="font-semibold text-brand-text-primary mb-1 text-sm">{p.title}</p>
+              <p className="text-xs text-brand-text-secondary">{p.prompt}</p>
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
 const convertMessagesToHistory = (messages: Message[]): Content[] => {
     return messages
         .filter(msg => msg.status === 'complete' && msg.content) // Only use completed, non-empty messages
@@ -602,6 +637,11 @@ const App: React.FC = () => {
         setIsLearningHubLoading(false);
     }
   }, [messages]);
+  
+  const handlePromptClick = (prompt: string) => {
+    setUserInput(prompt);
+    document.querySelector('textarea')?.focus();
+  };
 
 
   return (
@@ -654,8 +694,9 @@ const App: React.FC = () => {
                 <HippocratesIcon className="w-24 h-24 mb-6 text-brand-border" />
                 <h2 className="text-2xl font-bold text-brand-text-primary mb-2">Begin Your Consultation</h2>
                 <p className="max-w-md mb-4">
-                    Describe your patient's case to start the conversation.
+                    Describe your patient's case to start the conversation, or try an example below.
                 </p>
+                <ExamplePrompts onPromptClick={handlePromptClick} />
                 </div>
             )}
             {messages.map((msg, index) => <MessageBubble key={index} message={msg} onRetry={handleRetry} />)}
