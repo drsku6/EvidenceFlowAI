@@ -1,11 +1,10 @@
-
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Sender, type Message, type ChatSession, type Session, CaseOfTheWeek, CurbsideConsult } from './types';
+import { Sender, type Message, type ChatSession, type Session } from './types';
 import { COMMANDS } from './constants';
-import { createChatSession, sendMessageStream, generateLearningContent } from './services/geminiService';
-import { HippocratesIcon, UserIcon, SendIcon, LoadingIcon, CopyIcon, CheckIcon, BookOpenIcon, ChevronDownIcon, TrashIcon } from './components/icons';
+import { createChatSession, sendMessageStream, generatePatientSummary, generateMasterAlgorithm } from './services/geminiService';
+import { HippocratesIcon, UserIcon, SendIcon, LoadingIcon, CopyIcon, CheckIcon, BookOpenIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, ChatBubbleLeftRightIcon } from './components/icons';
 import Feedback from './components/Feedback';
 import { Content } from '@google/genai';
 
@@ -156,126 +155,145 @@ const MessageBubble: React.FC<{ message: Message; onRetry: () => void; }> = ({ m
   );
 };
 
-const CaseOfTheWeekDisplay: React.FC<{ caseData: CaseOfTheWeek }> = ({ caseData }) => (
-    <div className="bg-brand-surface p-6 rounded-lg shadow">
-        <h3 className="text-2xl font-bold text-brand-text-primary mb-3">{caseData.title}</h3>
-        <div className="space-y-4 text-brand-text-primary">
-            <div>
-                <h4 className="font-semibold text-lg border-b border-brand-border pb-1 mb-2">Case Summary</h4>
-                <ReactMarkdown children={caseData.summary} components={markdownComponents} />
-            </div>
-            <div>
-                <h4 className="font-semibold text-lg border-b border-brand-border pb-1 mb-2">Clinical Reasoning</h4>
-                <ReactMarkdown children={caseData.reasoning} components={markdownComponents} />
-            </div>
-            <div>
-                <h4 className="font-semibold text-lg border-b border-brand-border pb-1 mb-2">Key Learning Points</h4>
-                <ul className="list-disc list-inside space-y-1 pl-4">
-                    {caseData.learningPoints.map((point, index) => <li key={index}><ReactMarkdown children={point} components={{ p: React.Fragment }} /></li>)}
-                </ul>
-            </div>
-            <div>
-                <h4 className="font-semibold text-lg border-b border-brand-border pb-1 mb-2">What If?</h4>
-                <blockquote className="border-l-4 border-brand-accent pl-4 italic my-2 text-brand-text-secondary">
-                  <ReactMarkdown children={caseData.whatIf} components={markdownComponents} />
-                </blockquote>
-            </div>
+const AlgorithmSkeletonLoader: React.FC = () => (
+    <div className="space-y-8 animate-pulse p-6 bg-brand-bg rounded-lg shadow-sm">
+        <div className="space-y-4">
+            <div className="h-6 bg-gray-300 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-full"></div>
+            <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+        </div>
+        <div className="space-y-4">
+            <div className="h-5 bg-gray-300 rounded w-1/2"></div>
+            <div className="h-4 bg-gray-200 rounded w-full"></div>
+            <div className="h-4 bg-gray-200 rounded w-full"></div>
+            <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+            <div className="h-4 bg-gray-200 rounded w-4/6"></div>
         </div>
     </div>
 );
 
-const CurbsideConsultsDisplay: React.FC<{ consults: CurbsideConsult[] }> = ({ consults }) => {
-    const [openIndex, setOpenIndex] = useState<number | null>(null);
+const MasterAlgorithmView: React.FC<{
+    activeSession: Session;
+    onUpdateSession: (session: Session) => void;
+    onGenerateAlgorithm: (topic: string) => void;
+}> = ({ activeSession, onUpdateSession, onGenerateAlgorithm }) => {
+    const [isLoadingSummary, setIsLoadingSummary] = useState(false);
+    const [summaryError, setSummaryError] = useState<string | null>(null);
+    const [editableTopic, setEditableTopic] = useState('');
 
-    const toggleConsult = (index: number) => {
-        setOpenIndex(openIndex === index ? null : index);
-    };
-
-    return (
-        <div className="space-y-3">
-            {consults.map((consult, index) => (
-                <div key={index} className="border border-brand-border rounded-lg bg-brand-surface overflow-hidden">
-                    <button onClick={() => toggleConsult(index)} className="w-full text-left p-4 flex justify-between items-center hover:bg-brand-secondary transition-colors focus:outline-none focus:ring-2 focus:ring-brand-accent">
-                        <h4 className="font-semibold text-brand-text-primary">{consult.question}</h4>
-                        <ChevronDownIcon isOpen={openIndex === index} />
-                    </button>
-                    {openIndex === index && (
-                        <div className="p-4 border-t border-brand-border bg-white">
-                            <ReactMarkdown children={consult.answer} components={markdownComponents} />
-                        </div>
-                    )}
-                </div>
-            ))}
-        </div>
+    const hasCompletedMessages = React.useMemo(() => 
+        activeSession.messages.some(m => m.status === 'complete'),
+        [activeSession.messages]
     );
-};
 
-const LearningHub: React.FC<{
-    isOpen: boolean;
-    onClose: () => void;
-    onGenerate: () => void;
-    isLoading: boolean;
-    error: string | null;
-    caseOfTheWeek: CaseOfTheWeek | null;
-    curbsideConsults: CurbsideConsult[];
-}> = ({ isOpen, onClose, onGenerate, isLoading, error, caseOfTheWeek, curbsideConsults }) => {
-    if (!isOpen) return null;
+    useEffect(() => {
+        if (activeSession.patientSummary) {
+            setEditableTopic(activeSession.patientSummary.topic);
+            return;
+        }
+
+        if (summaryError) {
+            return;
+        }
+
+        if (hasCompletedMessages && !isLoadingSummary) {
+            const handleGenerateSummary = async () => {
+                setIsLoadingSummary(true);
+                setSummaryError(null);
+                try {
+                    const conversationHistory = activeSession.messages
+                        .filter(m => m.status === 'complete')
+                        .map(m => `${m.sender === Sender.User ? 'User' : 'Hippocrates'}: ${m.content}`)
+                        .join('\n\n');
+                    
+                    if (!conversationHistory.trim()) {
+                       return;
+                    }
+
+                    const summaryData = await generatePatientSummary(conversationHistory);
+                    const updatedSession = { ...activeSession, patientSummary: summaryData };
+                    onUpdateSession(updatedSession);
+                    setEditableTopic(summaryData.topic);
+
+                } catch (e) {
+                    setSummaryError(e instanceof Error ? e.message : "An unknown error occurred during summary generation.");
+                } finally {
+                    setIsLoadingSummary(false);
+                }
+            };
+            handleGenerateSummary();
+        }
+    }, [activeSession, onUpdateSession, isLoadingSummary, hasCompletedMessages, summaryError]);
+
+    const isLoadingAlgorithm = !!activeSession.isGeneratingAlgorithm;
+    const algorithmError = activeSession.algorithmError;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" aria-modal="true" role="dialog">
-            <div className="bg-brand-bg rounded-xl shadow-2xl w-full max-w-4xl h-[90vh] flex flex-col">
-                <header className="p-4 border-b border-brand-border flex justify-between items-center flex-shrink-0">
-                    <h2 className="text-xl font-bold text-brand-text-primary flex items-center gap-2"><BookOpenIcon /> Learning Hub</h2>
-                    <button onClick={onClose} className="p-2 rounded-full hover:bg-brand-secondary">&times;</button>
-                </header>
-                <main className="flex-grow p-6 overflow-y-auto space-y-6">
-                    {!caseOfTheWeek && !isLoading && (
-                        <div className="text-center p-8 border-2 border-dashed border-brand-border rounded-lg">
-                            <h3 className="text-xl font-semibold text-brand-text-primary mb-2">Unlock Personalized Insights</h3>
-                            <p className="text-brand-text-secondary mb-4">Analyze your recent consultations to generate a deep-dive case study and actionable curbside consults.</p>
-                            <button onClick={onGenerate} className="px-4 py-2 bg-brand-accent text-white font-semibold rounded-lg hover:bg-brand-accent-hover transition-colors flex items-center gap-2 mx-auto">
-                                Analyze Recent Consultations
-                            </button>
-                        </div>
-                    )}
-                    {isLoading && (
-                        <div className="flex items-center justify-center p-10">
-                            <LoadingIcon className="w-8 h-8 mr-4" />
-                            <span className="text-lg text-brand-text-secondary">Hippocrates is analyzing your cases...</span>
-                        </div>
-                    )}
-                    {error && !isLoading && (
-                        <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md" role="alert">
-                            <p className="font-bold">Analysis Failed</p>
-                            <p>{error}</p>
-                            <button onClick={onGenerate} className="mt-2 text-sm font-semibold text-red-800 hover:underline">Try Again</button>
-                        </div>
-                    )}
-                    {caseOfTheWeek && (
-                        <section>
-                            <h2 className="text-2xl font-bold text-brand-text-primary mb-4 border-b pb-2">Case of the Week</h2>
-                            <CaseOfTheWeekDisplay caseData={caseOfTheWeek} />
-                        </section>
-                    )}
-                    {curbsideConsults.length > 0 && (
-                        <section>
-                            <h2 className="text-2xl font-bold text-brand-text-primary mb-4 border-b pb-2">Curbside Consults</h2>
-                            <CurbsideConsultsDisplay consults={curbsideConsults} />
-                        </section>
-                    )}
-                </main>
-                 {caseOfTheWeek && (
-                    <footer className="p-4 border-t border-brand-border flex-shrink-0">
-                        <button onClick={onGenerate} disabled={isLoading} className="w-full px-4 py-2 bg-brand-secondary text-brand-text-primary font-semibold rounded-lg hover:bg-brand-border transition-colors flex items-center gap-2 mx-auto justify-center disabled:opacity-50">
-                            {isLoading ? <LoadingIcon className="w-5 h-5" /> : null}
-                            {isLoading ? 'Re-analyzing...' : 'Re-analyze and Generate New Insights'}
+        <div className="p-6 overflow-y-auto w-full max-w-5xl mx-auto">
+            {(summaryError || algorithmError) && (
+                <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md mb-6" role="alert">
+                    <p className="font-bold">An Error Occurred</p>
+                    <p>{summaryError || algorithmError}</p>
+                </div>
+            )}
+            
+            {!hasCompletedMessages && !isLoadingSummary && !summaryError && !activeSession.patientSummary && (
+                <div className="p-6 text-center text-brand-text-secondary">
+                    <p>Waiting for the current consultation turn to complete before generating a summary...</p>
+                </div>
+            )}
+
+            {isLoadingSummary && (
+                <div className="animate-pulse space-y-4">
+                    <div className="h-5 bg-gray-200 rounded w-1/3"></div>
+                    <div className="h-3 bg-gray-200 rounded w-full"></div>
+                    <div className="h-3 bg-gray-200 rounded w-5/6"></div>
+                </div>
+            )}
+
+            {!isLoadingSummary && activeSession.patientSummary && (
+                <div className="mb-8">
+                    <h2 className="text-xl font-bold text-brand-text-primary mb-3">Consultation Summary</h2>
+                    <div className="bg-brand-secondary p-4 rounded-lg shadow-sm prose prose-sm max-w-none">
+                         <ReactMarkdown children={activeSession.patientSummary.summary} remarkPlugins={[remarkGfm]} components={markdownComponents} />
+                    </div>
+                </div>
+            )}
+
+            {!isLoadingSummary && activeSession.patientSummary && (
+                 <div className="p-6 bg-brand-surface border border-brand-border rounded-lg shadow-md">
+                    <label htmlFor="topic-input" className="block text-sm font-bold text-brand-text-primary mb-2">Algorithm Topic</label>
+                    <p className="text-xs text-brand-text-secondary mb-3">Confirm or edit the topic to generate a master algorithm.</p>
+                    <div className="flex items-center gap-3">
+                        <input
+                            id="topic-input"
+                            type="text"
+                            value={editableTopic}
+                            onChange={(e) => setEditableTopic(e.target.value)}
+                            className="w-full px-3 py-2 bg-brand-bg border border-brand-border rounded-md focus:outline-none focus:ring-2 focus:ring-brand-accent"
+                        />
+                        <button
+                            onClick={() => onGenerateAlgorithm(editableTopic)}
+                            disabled={isLoadingAlgorithm || !editableTopic.trim()}
+                            className="px-4 py-2 bg-brand-accent text-white font-semibold rounded-lg hover:bg-brand-accent-hover transition-colors flex items-center gap-2 disabled:bg-gray-300 disabled:cursor-not-allowed flex-shrink-0"
+                        >
+                            {isLoadingAlgorithm ? <LoadingIcon /> : <BookOpenIcon className="w-5 h-5"/>}
+                            <span>{isLoadingAlgorithm ? 'Generating...' : 'Generate Algorithm'}</span>
                         </button>
-                    </footer>
-                )}
+                    </div>
+                </div>
+            )}
+
+            <div className="mt-8">
+                 {isLoadingAlgorithm && <AlgorithmSkeletonLoader />}
+                 {activeSession.masterAlgorithmHtml && !isLoadingAlgorithm && (
+                    <div className="bg-brand-surface p-4 sm:p-6 rounded-lg shadow-lg border border-brand-border" dangerouslySetInnerHTML={{ __html: activeSession.masterAlgorithmHtml }} />
+                 )}
             </div>
         </div>
     );
 };
+
 
 const Sidebar: React.FC<{
     sessions: Session[];
@@ -286,7 +304,7 @@ const Sidebar: React.FC<{
     width: number;
 }> = ({ sessions, activeSessionId, onNewSession, onSelectSession, onDeleteSession, width }) => {
     return (
-        <aside className="bg-brand-secondary flex flex-col border-r border-brand-border" style={{ width: `${width}px` }}>
+        <aside className="bg-brand-secondary flex flex-col border-r border-brand-border h-full overflow-hidden" style={{ width: `${width}px` }}>
             <div className="p-3 border-b border-brand-border">
                 <button onClick={onNewSession} className="w-full px-3 py-2 bg-brand-surface text-brand-text-primary font-semibold rounded-lg text-sm hover:bg-brand-border transition-colors flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" /></svg>
@@ -327,15 +345,10 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   
   const [sidebarWidth, setSidebarWidth] = useState(260);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isResizing = useRef(false);
 
-  // Learning Hub state
-  const [isLearningHubOpen, setIsLearningHubOpen] = useState(false);
-  const [isLearningHubLoading, setIsLearningHubLoading] =useState(false);
-  const [learningHubError, setLearningHubError] = useState<string | null>(null);
-  const [caseOfTheWeek, setCaseOfTheWeek] = useState<CaseOfTheWeek | null>(null);
-  const [curbsideConsults, setCurbsideConsults] = useState<CurbsideConsult[]>([]);
-  const [hasNewLearningContent, setHasNewLearningContent] = useState(false);
+  const [activeView, setActiveView] = useState<'consultation' | 'algorithm'>('consultation');
 
   const chatSessionRef = useRef<ChatSession>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -366,6 +379,8 @@ const App: React.FC = () => {
   useEffect(() => {
     if (sessions.length > 0) {
       localStorage.setItem('hippocrates-sessions', JSON.stringify(sessions));
+    } else {
+      localStorage.removeItem('hippocrates-sessions');
     }
   }, [sessions]);
 
@@ -380,7 +395,7 @@ const App: React.FC = () => {
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, activeView]);
 
   const handleResizeMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -394,13 +409,13 @@ const App: React.FC = () => {
   }, []);
 
   const handleResizeMouseMove = useCallback((e: MouseEvent) => {
-    if (isResizing.current) {
+    if (isResizing.current && !isSidebarCollapsed) {
       const newWidth = e.clientX;
       if (newWidth >= 200 && newWidth <= 500) {
         setSidebarWidth(newWidth);
       }
     }
-  }, []);
+  }, [isSidebarCollapsed]);
 
   useEffect(() => {
     window.addEventListener('mousemove', handleResizeMouseMove);
@@ -419,18 +434,16 @@ const App: React.FC = () => {
     };
     setSessions(prev => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
+    setActiveView('consultation');
     setUserInput('');
     setIsLoading(false);
     setError(null);
-    setCaseOfTheWeek(null);
-    setCurbsideConsults([]);
-    setHasNewLearningContent(false);
-    setLearningHubError(null);
   }, []);
 
   const handleSelectSession = (id: string) => {
     if (id !== activeSessionId) {
         setActiveSessionId(id);
+        setActiveView('consultation');
         setIsLoading(false);
         setError(null);
     }
@@ -444,9 +457,7 @@ const App: React.FC = () => {
                 setActiveSessionId(remainingSessions[0].id);
             } else {
                 handleNewSession(); 
-                // handleNewSession creates a new session and sets it as active,
-                // but we need to return the new session array here.
-                return []; // This will be overwritten by handleNewSession's effect
+                return []; 
             }
         }
         if (remainingSessions.length === 0) {
@@ -458,6 +469,10 @@ const App: React.FC = () => {
 
   const updateMessageInSession = (sessionId: string, messageUpdater: (messages: Message[]) => Message[]) => {
       setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, messages: messageUpdater(s.messages) } : s));
+  };
+
+  const handleUpdateSession = (updatedSession: Session) => {
+    setSessions(prev => prev.map(s => s.id === updatedSession.id ? updatedSession : s));
   };
   
   const processStream = useCallback(async (prompt: string) => {
@@ -515,7 +530,6 @@ const App: React.FC = () => {
     if (!content || isLoading || !activeSessionId) return;
   
     if (!chatSessionRef.current) {
-        // This case might happen on first load, ensure session is created
         const currentSession = sessions.find(s => s.id === activeSessionId);
         if (currentSession) {
             chatSessionRef.current = createChatSession(convertMessagesToHistory(currentSession.messages));
@@ -524,6 +538,8 @@ const App: React.FC = () => {
              return;
         }
     }
+
+    setActiveView('consultation');
   
     const userMessage: Message = {
       sender: Sender.User,
@@ -538,7 +554,9 @@ const App: React.FC = () => {
           return {
               ...s,
               title: isFirstUserMessage ? content.substring(0, 40) : s.title,
-              messages: [...s.messages, userMessage]
+              messages: [...s.messages, userMessage],
+              patientSummary: undefined,
+              masterAlgorithmHtml: undefined,
           };
       }
       return s;
@@ -569,7 +587,7 @@ const App: React.FC = () => {
     updateMessageInSession(activeSessionId, prev => [...prev, hippocratesResponsePlaceholder]);
 
     await processStream(content);
-  }, [isLoading, activeSessionId, sessions]);
+  }, [isLoading, activeSessionId, sessions, processStream]);
 
   const handleSendMessage = useCallback(async () => {
     await sendMessage(userInput);
@@ -584,6 +602,7 @@ const App: React.FC = () => {
 
     setIsLoading(true);
     setError(null);
+    setActiveView('consultation');
 
     setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, messages: messagesBeforeRetry } : s));
 
@@ -598,154 +617,196 @@ const App: React.FC = () => {
     await processStream(lastUserMessage.content);
 }, [messages, activeSessionId, processStream]);
 
+  const handleGenerateMasterAlgorithm = useCallback(async (topic: string) => {
+    if (!activeSessionId) return;
+
+    setSessions(prev => prev.map(s => 
+        s.id === activeSessionId 
+        ? { ...s, isGeneratingAlgorithm: true, masterAlgorithmHtml: undefined, algorithmError: undefined } 
+        : s
+    ));
+    
+    try {
+        const htmlContent = await generateMasterAlgorithm(topic);
+        setSessions(prev => prev.map(s => 
+            s.id === activeSessionId 
+            ? { ...s, masterAlgorithmHtml: htmlContent, isGeneratingAlgorithm: false } 
+            : s
+        ));
+    } catch(e) {
+        const errorMessage = e instanceof Error ? e.message : "An unknown error occurred during algorithm generation.";
+        setSessions(prev => prev.map(s => 
+            s.id === activeSessionId 
+            ? { ...s, algorithmError: errorMessage, isGeneratingAlgorithm: false } 
+            : s
+        ));
+    }
+  }, [activeSessionId]);
 
   const handleCommandClick = (command: string) => {
       if (command.startsWith('/ask') || command.startsWith('/run')) {
           setUserInput(command + ' ');
-          // Find the textarea and focus it
-          const textarea = document.querySelector('textarea');
-          if (textarea) {
-            textarea.focus();
-          }
+          document.querySelector('textarea')?.focus();
       } else {
         sendMessage(command);
       }
   };
-
-  const handleGenerateLearningContent = useCallback(async () => {
-    setIsLearningHubLoading(true);
-    setLearningHubError(null);
-    try {
-        const conversationHistory = messages
-          .filter(m => m.status === 'complete')
-          .map(m => `${m.sender === Sender.User ? 'User' : 'Hippocrates'}: ${m.content}`)
-          .join('\n\n');
-        
-        if (!conversationHistory) {
-            throw new Error("There is no consultation history to analyze yet.");
-        }
-
-        const content = await generateLearningContent(conversationHistory);
-        setCaseOfTheWeek(content.caseOfTheWeek);
-        setCurbsideConsults(content.curbsideConsults);
-        setHasNewLearningContent(true);
-    } catch (e) {
-        setLearningHubError(e instanceof Error ? e.message : "An unknown error occurred during analysis.");
-        setCaseOfTheWeek(null);
-        setCurbsideConsults([]);
-    } finally {
-        setIsLearningHubLoading(false);
-    }
-  }, [messages]);
   
   const handlePromptClick = (prompt: string) => {
     setUserInput(prompt);
     document.querySelector('textarea')?.focus();
   };
 
+  const TabButton: React.FC<{
+      label: string;
+      icon: React.ReactNode;
+      isActive: boolean;
+      onClick: () => void;
+      disabled?: boolean;
+    }> = ({ label, icon, isActive, onClick, disabled }) => (
+      <button 
+        onClick={onClick}
+        disabled={disabled}
+        className={`flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+          isActive 
+            ? 'bg-brand-accent/10 text-brand-accent' 
+            : 'text-brand-text-secondary hover:bg-brand-secondary'
+        }`}
+      >
+        {icon}
+        {label}
+      </button>
+  );
 
   return (
     <>
-    <LearningHub
-        isOpen={isLearningHubOpen}
-        onClose={() => setIsLearningHubOpen(false)}
-        onGenerate={handleGenerateLearningContent}
-        isLoading={isLearningHubLoading}
-        error={learningHubError}
-        caseOfTheWeek={caseOfTheWeek}
-        curbsideConsults={curbsideConsults}
-    />
-    <div className="h-screen w-screen flex bg-brand-bg text-brand-text-primary font-sans overflow-hidden">
-        <Sidebar 
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onNewSession={handleNewSession}
-            onSelectSession={handleSelectSession}
-            onDeleteSession={handleDeleteSession}
-            width={sidebarWidth}
-        />
+    <div className="h-screen w-screen flex bg-brand-bg text-brand-text-primary font-sans overflow-hidden relative">
         <div 
-            className="w-1.5 cursor-col-resize bg-brand-border/50 hover:bg-brand-accent/50 transition-colors flex-shrink-0"
-            onMouseDown={handleResizeMouseDown}
-        />
+            className="flex-shrink-0 transition-all duration-300 ease-in-out"
+            style={{ 
+                width: isSidebarCollapsed ? '0px' : `${sidebarWidth}px`,
+                overflow: 'hidden'
+            }}
+        >
+            <Sidebar 
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onNewSession={handleNewSession}
+                onSelectSession={handleSelectSession}
+                onDeleteSession={handleDeleteSession}
+                width={sidebarWidth}
+            />
+        </div>
+
+        {!isSidebarCollapsed && (
+             <div 
+                className="w-1.5 cursor-col-resize bg-brand-border/50 hover:bg-brand-accent/50 transition-colors flex-shrink-0"
+                onMouseDown={handleResizeMouseDown}
+            />
+        )}
+       
+        <button
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="absolute top-1/2 -translate-y-1/2 z-20 w-6 h-6 bg-brand-surface rounded-full shadow-md border border-brand-border hover:bg-brand-secondary flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-brand-accent"
+            style={{ 
+                left: isSidebarCollapsed ? '8px' : `${sidebarWidth - 12}px`, 
+                transition: 'left 0.3s ease-in-out' 
+            }}
+            aria-label={isSidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
+        >
+            {isSidebarCollapsed ? <ChevronRightIcon className="w-4 h-4" /> : <ChevronLeftIcon className="w-4 h-4" />}
+        </button>
+
         <div className="flex-1 flex flex-col min-w-0">
             <header className="p-4 border-b border-brand-border bg-brand-surface flex-shrink-0 flex justify-between items-center">
-                <h1 className="text-xl font-bold flex items-center"><HippocratesIcon className="w-6 h-6 mr-3 text-brand-accent"/>Consultation with Hippocrates</h1>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => {
-                            setIsLearningHubOpen(true);
-                            setHasNewLearningContent(false);
-                        }}
+                <h1 className="text-xl font-bold flex items-center"><HippocratesIcon className="w-6 h-6 mr-3 text-brand-accent"/>Hippocrates</h1>
+                <div className="flex items-center gap-2 bg-brand-secondary p-1 rounded-lg">
+                    <TabButton
+                        label="Consultation"
+                        icon={<ChatBubbleLeftRightIcon className="w-5 h-5"/>}
+                        isActive={activeView === 'consultation'}
+                        onClick={() => setActiveView('consultation')}
+                    />
+                     <TabButton
+                        label="Master Algorithm"
+                        icon={<BookOpenIcon className="w-5 h-5"/>}
+                        isActive={activeView === 'algorithm'}
+                        onClick={() => setActiveView('algorithm')}
                         disabled={!activeSession || messages.length === 0}
-                        className="relative p-2 rounded-full hover:bg-brand-secondary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        aria-label="Open Learning Hub"
-                    >
-                        <BookOpenIcon className="w-6 h-6 text-brand-text-secondary"/>
-                        {hasNewLearningContent && (
-                            <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-brand-accent ring-2 ring-white"></span>
-                        )}
-                    </button>
+                    />
                 </div>
             </header>
-            <main ref={chatContainerRef} className="flex-grow p-6 overflow-y-auto w-full max-w-5xl mx-auto">
-            {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full text-center text-brand-text-secondary p-8">
-                <HippocratesIcon className="w-24 h-24 mb-6 text-brand-border" />
-                <h2 className="text-2xl font-bold text-brand-text-primary mb-2">Begin Your Consultation</h2>
-                <p className="max-w-md mb-4">
-                    Describe your patient's case to start the conversation, or try an example below.
-                </p>
-                <ExamplePrompts onPromptClick={handlePromptClick} />
-                </div>
+            
+            {activeView === 'consultation' && (
+              <>
+                <main ref={chatContainerRef} className="flex-grow p-6 overflow-y-auto w-full max-w-5xl mx-auto">
+                {messages.length === 0 && (
+                    <div className="flex flex-col items-center justify-center h-full text-center text-brand-text-secondary p-8">
+                    <HippocratesIcon className="w-24 h-24 mb-6 text-brand-border" />
+                    <h2 className="text-2xl font-bold text-brand-text-primary mb-2">Begin Your Consultation</h2>
+                    <p className="max-w-md mb-4">
+                        Describe your patient's case to start the conversation, or try an example below.
+                    </p>
+                    <ExamplePrompts onPromptClick={handlePromptClick} />
+                    </div>
+                )}
+                {messages.map((msg, index) => <MessageBubble key={index} message={msg} onRetry={handleRetry} />)}
+                </main>
+                <footer className="p-4 border-t border-brand-border bg-brand-surface flex-shrink-0">
+                    <div className="max-w-5xl mx-auto">
+                        {error && <p className="text-red-500 text-sm mb-2 text-center">{error}</p>}
+                        <>
+                        {activeSession && (
+                            <div className="flex flex-wrap gap-2 mb-3 justify-center">
+                                {COMMANDS.map(cmd => (
+                                    <button 
+                                        key={cmd}
+                                        onClick={() => handleCommandClick(cmd)}
+                                        disabled={isLoading}
+                                        className="px-3 py-1 bg-brand-secondary text-brand-text-secondary text-xs rounded-full hover:bg-gray-200 hover:text-brand-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {cmd}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    <div className="flex items-center gap-2 bg-brand-secondary p-2 rounded-lg border border-transparent focus-within:border-brand-accent focus-within:ring-2 focus-within:ring-brand-accent/50">
+                        <textarea
+                        value={userInput}
+                        onChange={(e) => setUserInput(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
+                                e.preventDefault();
+                                handleSendMessage();
+                            }
+                        }}
+                        placeholder={activeSession ? "Ask a follow-up, provide an update, or use a command..." : "Describe your patient/medical query to begin."}
+                        className="w-full bg-transparent focus:outline-none p-2 resize-none max-h-40"
+                        rows={1}
+                        disabled={isLoading}
+                        />
+                        <button
+                        onClick={handleSendMessage}
+                        disabled={isLoading || !userInput.trim()}
+                        className="p-2 rounded-full bg-brand-accent text-white disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-brand-accent-hover transition-colors self-end"
+                        aria-label="Send message"
+                        >
+                        <SendIcon />
+                        </button>
+                    </div>
+                    </>
+                    </div>
+                </footer>
+              </>
             )}
-            {messages.map((msg, index) => <MessageBubble key={index} message={msg} onRetry={handleRetry} />)}
-            </main>
-            <footer className="p-4 border-t border-brand-border bg-brand-surface flex-shrink-0">
-                <div className="max-w-5xl mx-auto">
-                    {error && <p className="text-red-500 text-sm mb-2 text-center">{error}</p>}
-                    <>
-                    {activeSession && (
-                        <div className="flex flex-wrap gap-2 mb-3 justify-center">
-                            {COMMANDS.map(cmd => (
-                                <button 
-                                    key={cmd}
-                                    onClick={() => handleCommandClick(cmd)}
-                                    disabled={isLoading}
-                                    className="px-3 py-1 bg-brand-secondary text-brand-text-secondary text-xs rounded-full hover:bg-gray-200 hover:text-brand-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                >
-                                    {cmd}
-                                </button>
-                            ))}
-                        </div>
-                    )}
-                <div className="flex items-center gap-2 bg-brand-secondary p-2 rounded-lg border border-transparent focus-within:border-brand-accent focus-within:ring-2 focus-within:ring-brand-accent/50">
-                    <textarea
-                    value={userInput}
-                    onChange={(e) => setUserInput(e.target.value)}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey && !isLoading) {
-                            e.preventDefault();
-                            handleSendMessage();
-                        }
-                    }}
-                    placeholder={activeSession ? "Ask a follow-up, provide an update, or use a command..." : "Describe your patient/medical query to begin."}
-                    className="w-full bg-transparent focus:outline-none p-2 resize-none max-h-40"
-                    rows={1}
-                    disabled={isLoading}
-                    />
-                    <button
-                    onClick={handleSendMessage}
-                    disabled={isLoading || !userInput.trim()}
-                    className="p-2 rounded-full bg-brand-accent text-white disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-brand-accent-hover transition-colors self-end"
-                    aria-label="Send message"
-                    >
-                    <SendIcon />
-                    </button>
-                </div>
-                </>
-                </div>
-            </footer>
+
+            {activeView === 'algorithm' && activeSession && (
+                <MasterAlgorithmView
+                    activeSession={activeSession}
+                    onUpdateSession={handleUpdateSession}
+                    onGenerateAlgorithm={handleGenerateMasterAlgorithm}
+                />
+            )}
         </div>
     </div>
     <Feedback />

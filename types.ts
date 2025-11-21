@@ -1,4 +1,3 @@
-
 import { Chat } from '@google/genai';
 
 export enum Sender {
@@ -20,17 +19,13 @@ export interface Session {
   id: string;
   title: string;
   messages: Message[];
+  patientSummary?: PatientSummary;
+  masterAlgorithmHtml?: string;
+  isGeneratingAlgorithm?: boolean;
+  algorithmError?: string;
 }
 
-export interface CaseOfTheWeek {
-  title: string;
+export interface PatientSummary {
   summary: string;
-  reasoning: string;
-  learningPoints: string[];
-  whatIf: string;
-}
-
-export interface CurbsideConsult {
-  question: string;
-  answer: string;
+  topic: string;
 }

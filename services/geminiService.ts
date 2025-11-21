@@ -5,8 +5,8 @@ import { getApPrompt } from '../prompts/ap';
 import { getHandoffPrompt } from '../prompts/handoff';
 import { getStickyNotePrompt } from '../prompts/stickyNote';
 import { getPresentationPrompt } from '../prompts/presentation';
-import { getLearningPrompt } from '../prompts/learning';
-import { CaseOfTheWeek, CurbsideConsult } from "../types";
+import { getPatientSummaryPrompt, getMasterAlgorithmPrompt } from '../prompts/learning';
+import { PatientSummary } from "../types";
 
 
 if (!process.env.API_KEY) {
@@ -67,41 +67,21 @@ export const sendMessageStream = async (chat: Chat, message: string, conversatio
   }
 };
 
-export const generateLearningContent = async (conversationHistory: string): Promise<{ caseOfTheWeek: CaseOfTheWeek; curbsideConsults: CurbsideConsult[] }> => {
+export const generatePatientSummary = async (conversationHistory: string): Promise<PatientSummary> => {
     try {
-        const prompt = getLearningPrompt(conversationHistory);
+        const prompt = getPatientSummaryPrompt(conversationHistory);
         const response = await ai.models.generateContent({
-            model: 'gemini-2.5-pro', // Use a more powerful model for this complex task
+            model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
                 responseMimeType: 'application/json',
                 responseSchema: {
                     type: Type.OBJECT,
                     properties: {
-                        caseOfTheWeek: {
-                            type: Type.OBJECT,
-                            properties: {
-                                title: { type: Type.STRING },
-                                summary: { type: Type.STRING },
-                                reasoning: { type: Type.STRING },
-                                learningPoints: {
-                                    type: Type.ARRAY,
-                                    items: { type: Type.STRING }
-                                },
-                                whatIf: { type: Type.STRING }
-                            },
-                        },
-                        curbsideConsults: {
-                            type: Type.ARRAY,
-                            items: {
-                                type: Type.OBJECT,
-                                properties: {
-                                    question: { type: Type.STRING },
-                                    answer: { type: Type.STRING }
-                                }
-                            }
-                        }
-                    }
+                        summary: { type: Type.STRING },
+                        topic: { type: Type.STRING }
+                    },
+                    required: ['summary', 'topic']
                 }
             }
         });
@@ -111,7 +91,23 @@ export const generateLearningContent = async (conversationHistory: string): Prom
         return parsedJson;
 
     } catch (error) {
-        console.error("Error generating learning content:", error);
-        throw new Error("Failed to generate learning content from Hippocrates.");
+        console.error("Error generating patient summary:", error);
+        throw new Error("Failed to generate patient summary from Hippocrates.");
+    }
+};
+
+export const generateMasterAlgorithm = async (topic: string): Promise<string> => {
+    try {
+        const prompt = getMasterAlgorithmPrompt(topic);
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-pro',
+            contents: prompt,
+        });
+
+        return response.text.trim();
+
+    } catch (error) {
+        console.error("Error generating master algorithm:", error);
+        throw new Error("Failed to generate master algorithm from Hippocrates.");
     }
 };
