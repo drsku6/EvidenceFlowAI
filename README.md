@@ -23,6 +23,8 @@
     *   `/run_simulation` - Starts a dynamic, interactive clinical emergency simulation.
 *   **🧠 Master Board-Style Algorithms**
     Generate a step-by-step thinking algorithm (ABIM board-prep style) for any topic directly in the chat feed to master the underlying pathophysiology, differential comparisons, and actionable "Best Next Steps."
+*   **💻 Modern Fluid Interface**
+    A completely responsive, fluid-width workspace featuring Claude-style editorial typography (Source Serif 4 / Inter) that makes reading dense clinical charts and tables comfortable on any monitor.
 *   **🔒 Clinician-First Privacy**
     Built entirely on a client-side architecture. Chat logs, patient summaries, and clinical algorithms are saved exclusively in your browser's local storage (`localStorage`). No clinical data is ever stored on external project databases.
 
@@ -60,7 +62,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 ```bash
 npm run dev
 ```
-Open `http://localhost:3000` in your browser to begin your consultation.
+Open `http://localhost:3000` in your browser to begin seeing your patient.
 
 ### 4. Build for Production
 To compile and package the app for static hosting (Firebase, Netlify, Cloud Storage, etc.):
@@ -84,7 +86,7 @@ To optimize speed, cost, and latency, Hippocrates runs all actions—including S
 
 Hippocrates is designed with data protection in mind:
 *   **No PHI / PII**: **Do not input any real patient records or identifiers under any circumstances.** If you are demoing, teaching, or testing the app, ensure all cases are strictly fictional or fully de-identified.
-*   **Local Storage**: All consultation data resides locally in the user's browser cache. Clearing your browser data deletes all sessions.
+*   **Local Storage**: All patient encounter data resides locally in the user's browser cache. Clearing your browser data deletes all sessions.
 *   **Data Transmission**: Data is sent client-side to the Google Gemini API. When deploying in a clinical setting, ensure your Google Cloud organization is covered by a Business Associate Agreement (BAA) to prevent inputs from being utilized in training sets.
 
 ---
