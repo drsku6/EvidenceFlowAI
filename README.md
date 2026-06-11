@@ -1,8 +1,6 @@
 # ⚕️ Hippocrates: AI Hospitalist Mentor & Clinical Co-Pilot
 
-Hippocrates is an interactive, web-based clinical decision-support and educational tool. Designed to act as an on-demand mentor for hospital medicine physicians, residents, and medical students, Hippocrates combines the wisdom of a seasoned academic physician with the latest evidence-based guidelines and clinical trials.
-
-The application leverages Google's Gemini models directly in the browser to guide clinical reasoning, generate polished medical documentation, and create high-yield, board-style thinking algorithms.
+**Hippocrates** is an open-source, persona-driven clinical AI copilot. Built on top of **Gemini 3.5 Flash** for blazing-fast inference, Hippocrates uses dynamic system prompting to shift between highly specialized medical personas—acting as either a Socratic medical tutor or a direct, high-level attending physician. It serves as an interactive, web-based reasoning engine for medical professionals and hospitalists to augment clinical decision-making, generate structured documentation, and create high-yield, board-style thinking algorithms.
 
 > [!WARNING]
 > **DO NOT ENTER PROTECTED HEALTH INFORMATION (PHI) OR PERSONALLY IDENTIFIABLE INFORMATION (PII).**
