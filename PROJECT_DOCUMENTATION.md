@@ -114,15 +114,15 @@ Handles the interface with the `@google/genai` API:
   }
   ```
 
-### 3. Prompt Engineering Architecture (`prompts/`)
+### 3. Capabilities & Prompt Architecture (`prompts/` & `constants.ts`)
 The prompts isolate the AI from direct user phrasing to enforce strict structure and medical accuracy:
-* **Socratic Persona (`EVIDENCEFLOW_PERSONA` in [constants.ts](file:///Users/sku/drsku6/EvidenceFlowAI/constants.ts))**: Instructs the model to act as Socratic hospitalist mentors. Rather than lecturing, they must ask questions categorized by organ systems, pre-test probability, and "can't miss" diagnoses.
-* **Document Prompts (`ap.ts`, `handoff.ts`, `presentation.ts`, `stickyNote.ts`)**: Utilize a unified wrapper (`masterPrompt`) declaring the AI as "EvidenceFlow"—a clinical decision support tool. It demands:
-  - Strict adherence to formatting rules (e.g., progress plans must start with a hyphen and a space).
-  - Explicit grounding (no guessing clinical details not in the context).
-  - Concise layout tailored for medical professionals.
-  - **Local RAG Integration (`ap.ts`)**: The Assessment & Plan generator dynamically injects the `prompts/apTemplates.ts` knowledge base into the prompt context. The model is instructed to diagnose the patient, search the templates for a matching protocol, and perfectly mirror the template's structure (headings, bullet points) while weaving in the patient's live data.
-* **Master Algorithm Prompt (`learning.ts`)**: Commands `gemini-3.5-flash` to output an instructional board-prep algorithm. It enforces structured HTML using Tailwind CSS classes, comparative buckets, vignette keywords, and actionable "Best Next Steps".
+* **Socratic Persona (`EVIDENCEFLOW_PERSONA`)**: Instructs the model to act as a Socratic hospitalist mentor. Rather than lecturing, it asks questions categorized by organ systems, pre-test probability, and "can't miss" diagnoses to build clinical reasoning.
+* **Document Generators (`/assessment_and_plan`, `/handoff`, `/short_presentation`, `/sticky_note`)**: Utilize a unified wrapper declaring the AI as "EvidenceFlow"—a clinical decision support tool. It demands strict adherence to formatting rules, explicit grounding, and a concise layout tailored for medical professionals.
+  - **Local RAG Integration (`ap.ts`)**: The Assessment & Plan generator dynamically injects the `prompts/apTemplates.ts` knowledge base into the prompt context. The model is instructed to diagnose the patient, search the templates for a matching protocol, and perfectly mirror the template's structure while weaving in the patient's live data.
+* **Educational Review (`/clinicalalgorithm`)**: Commands `gemini-3.5-flash` to output an instructional board-prep algorithm. It enforces structured HTML using Tailwind CSS classes, comparative buckets, vignette keywords, and actionable "Best Next Steps".
+* **Advanced Clinical Tools**:
+  - **`/run_simulation`**: Presents a dynamic, interactive clinical emergency simulation based on the user's prompt (e.g., "The patient is now hypotensive.").
+  - **`/ask_the_expert`**: Answers nuanced, "unwritten rules" questions about medicine.
 
 ---
 
