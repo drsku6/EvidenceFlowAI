@@ -1,6 +1,4 @@
-import { Category } from '../types'
-
-export const apTemplatesData: Category = {
+export const apTemplatesData = {
     id: 'ap-samples',
     title: 'A&P Templates',
     icon: 'FileText',
