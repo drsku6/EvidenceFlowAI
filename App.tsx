@@ -671,20 +671,21 @@ const App: React.FC = () => {
     const content = messageContent.trim();
     if (!content || isLoading || !activeSessionId) return;
   
-    if (!chatSessionRef.current) {
-        const currentSession = sessions.find(s => s.id === activeSessionId);
-        if (currentSession) {
-            chatSessionRef.current = createChatSession(convertMessagesToHistory(currentSession.messages));
+    let currentSession = sessions.find(s => s.id === activeSessionId);
+    
+    if (!currentSession) {
+        if (sessions.length > 0) {
+            currentSession = sessions[0];
+            setActiveSessionId(currentSession.id);
         } else {
-             setError('No active session found.');
-             return;
+            currentSession = { id: activeSessionId || crypto.randomUUID(), title: "New Patient", messages: [], createdAt: Date.now() };
+            setSessions([currentSession]);
+            setActiveSessionId(currentSession.id);
         }
     }
 
-    const currentSession = sessions.find(s => s.id === activeSessionId);
-    if (!currentSession) {
-         setError('No active session found.');
-         return;
+    if (!chatSessionRef.current) {
+        chatSessionRef.current = createChatSession(convertMessagesToHistory(currentSession.messages));
     }
 
     const isFirstUserMessage = currentSession.messages.filter(m => m.sender === Sender.User).length === 0;
@@ -707,7 +708,7 @@ const App: React.FC = () => {
       };
 
       setSessions(prev => prev.map(s => {
-        if (s.id === activeSessionId) {
+        if (s.id === currentSession.id) {
             return {
                 ...s,
                 title: cleanTitle(content),
@@ -726,7 +727,7 @@ const App: React.FC = () => {
     }
   
     setSessions(prev => prev.map(s => {
-      if (s.id === activeSessionId) {
+      if (s.id === currentSession.id) {
           return {
               ...s,
               title: isFirstUserMessage ? cleanTitle(content) : s.title,
@@ -771,7 +772,7 @@ const App: React.FC = () => {
         loadingMessage,
         isHtml,
     };
-    updateMessageInSession(activeSessionId, prev => [...prev, EvidenceFlowAIResponsePlaceholder]);
+    updateMessageInSession(currentSession.id, prev => [...prev, EvidenceFlowAIResponsePlaceholder]);
 
     await processStream(content);
   }, [isLoading, activeSessionId, sessions, processStream]);

@@ -1,62 +1,185 @@
 # EvidenceFlowAI: AI Hospitalist Mentor & Clinical Co-Pilot
 ## Project Documentation
 
-**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot. Built on top of **Gemini 3.5 Flash** for blazing-fast inference, EvidenceFlowAI uses dynamic system prompting to shift between highly specialized medical personas—acting as either a Socratic medical tutor or a direct, high-level attending physician. It serves as an interactive, web-based reasoning engine for medical professionals and hospitalists to augment clinical decision-making, generate structured documentation, and create board-style clinical algorithms.
+**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot. Built on **Gemini (gemini-3.5-flash)** for blazing-fast inference, EvidenceFlowAI uses a sophisticated, multi-prompt architecture to shift between two core operational modes: a **Socratic clinical mentor** that builds reasoning skills through guided questioning, and a **Clinical Architect** that generates structured, evidence-based medical documentation on command. It is designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant at the bedside or during rounds.
 
 ---
 
 ## 🏗️ System Architecture & Data Flow
 
-EvidenceFlowAI is designed as a client-side single-page application (SPA). It communicates directly with Google's Gemini APIs from the frontend, ensuring minimal latency and zero middle-tier backend requirements.
+EvidenceFlowAI is a client-side single-page application (SPA) that communicates directly with Google's Gemini APIs. There is no backend server or database. All state is stored in the browser's `localStorage`.
 
 ```mermaid
 graph TD
-    User([User / Clinician]) <--> |React UI / Chat| App[App.tsx Orchestrator]
-    App <--> |Local Storage| LS[(Local Storage: EvidenceFlowAI-sessions)]
-    App --> |Conversational Messages| GS[geminiService.ts]
-    App --> |Slash Commands / Topic Input| GS
-    GS --> |gemini-3.5-flash / System Persona| G_API[Gemini API]
-    GS --> |gemini-3.5-flash / HTML format| G_API
-    
-    subgraph Prompts Layer
-        ap[ap.ts]
-        handoff[handoff.ts]
-        learning[learning.ts]
-        presentation[presentation.ts]
-        sticky[stickyNote.ts]
-        templates[(apTemplates.ts / Knowledge Base)]
+    User([User / Clinician]) <--> |React UI / Chat Feed| App[App.tsx Orchestrator]
+    App <--> |Persist / Restore Sessions| LS[(localStorage: EvidenceFlowAI-sessions)]
+    App --> |Conversational Messages + Persona| GS[geminiService.ts]
+    App --> |Choice Card Commands + Full Conversation History| GS
+    GS --> |gemini-3.5-flash / Chat Stream| G_API[Gemini API]
+    GS --> |gemini-3.5-flash / Content Stream| G_API
+    GS --> |gemini-3.5-flash / JSON Schema| G_API
+
+    subgraph Prompts Layer [prompts/ - Prompt Engineering Modules]
+        PERSONA[constants.ts\nEVIDENCEFLOW_PERSONA]
+        ap[ap.ts\nAssessment & Plan]
+        handoff[handoff.ts\nI-PASS Handoff]
+        presentation[presentation.ts\nRounds Presentation]
+        sticky[stickyNote.ts\nSticky Note]
+        learning[learning.ts\nSummary + Algorithm]
+        templates[(apTemplates.ts\n130KB Knowledge Base\n140+ Templates / 16 Specialties)]
     end
-    
-    templates --> |RAG Injection| ap
-    
-    GS -.-> |Injects Context| Prompts_Layer
+
+    templates --> |RAG Injection into Context| ap
+    PERSONA --> |System Instruction| GS
+    ap & handoff & presentation & sticky & learning --> |Formatted Prompt| GS
 ```
 
-### 1. Core Data Flow
-1. **Initiation**: The clinician enters a patient presentation (e.g., *78M with acute shortness of breath and edema*).
-2. **UI Action Selection**: Instead of calling the Gemini API immediately, the UI intercepts the first case input and renders a choice prompt card in the feed. This prompts the user to select their desired target output (Socratic Mentorship, Daily Progress Plan, Rounds Presentation, IPASS Handoff, Quick Sticky Note, or Clinical Simulation).
-3. **Execution**:
-   - If **Socratic Mentorship** is clicked, the app sends the patient details to the Socratic chat session (`gemini-3.5-flash`).
-   - If any **Generative Command** is clicked, the app appends the corresponding command (e.g., `/assessment_and_plan`) and streams the formatted output.
-4. **Local Persistence**: Patient sessions, chat logs, summaries, and generated algorithms are automatically serialized and saved to `localStorage` under `EvidenceFlowAI-sessions`.
-5. **Document Generation**: If a user runs a slash command at any point (e.g., `/handoff`), the system retrieves the full chat history, formats it, and feeds it into a specialized prompt template from the `prompts/` directory to generate structured, guidelines-compliant clinical documents.
-6. **Educational Review (Master Algorithm)**: The user can type `/clinicalalgorithm [topic]` directly in the chat input. The system prompts the `gemini-3.5-flash` model to build an interactive, high-yield clinical thinking path (ABIM board-prep style) for that topic, rendering it directly inside the message feed.
+---
 
-### 2. UI/UX Architecture
-* **Typography**: Employs a Claude-style dual font system. UI elements (sidebars, headers) use the modern **Inter** sans-serif font, while clinical outputs and model responses use **Source Serif 4** for high legibility during dense medical chart review.
-* **Layout**: A responsive, fluid-width workspace that stretches to fill wide monitors while maintaining balanced side padding (`px-6` to `2xl:px-32`), completely eliminating unused empty space.
-* **Ambient Styling**: Features subtle radial gradient blue glows behind the interface and ultra-thin custom scrollbars to establish a premium, clinical feel.
+## 🧠 The Two Operational Modes
+
+### Mode 1: Socratic Preceptor (Default Conversational Mode)
+Defined in [`constants.ts`](file:///Users/sku/drsku6/EvidenceFlowAI/constants.ts) via the `EVIDENCEFLOW_PERSONA` system instruction.
+
+When a clinician enters a patient case, EvidenceFlowAI does **not** give a direct answer. Instead, it performs a silent **"Virtual Triage"** in the background to identify:
+- **The Sickest Problem**: The most immediate life-threat.
+- **"Can't Miss" Diagnoses**: The most dangerous possibilities requiring immediate rule-out.
+- **Key Data Gaps**: Critical missing information (e.g., "What was the last troponin?").
+
+Its first response is always a series of **Socratic, probing questions** categorized by organ system, pre-test probability, and safety priorities. The persona is engineered to reference major clinical trials by name (e.g., "the RALES trial"), apply validated risk scores (CURB-65, TIMI, GRACE), and anchor every recommendation to underlying **first-principles pathophysiology**.
+
+This mode persists for the entire conversation, allowing the clinician to build a case iteratively through dialogue before triggering document generation.
+
+---
+
+### Mode 2: Clinical Architect (Generative Document Mode)
+On command (via the Choice Card UI or a slash command), the app assembles the full conversation history and passes it to a specialized prompt module in the `prompts/` directory. Each module shares a **unified Master Prompt** that declares the AI's role as "EvidenceFlow" — a clinical decision support tool and medical scribe — with strict core directives:
+
+1. **Clinical Accuracy First**: The assessment/diagnosis must be grounded solely in the provided conversation context. No hallucination. For the plan, it applies current evidence-based guidelines.
+2. **Structure and Clarity**: Outputs must use markdown (headings, bolding, lists) for scannable, EHR-ready formatting.
+3. **Conciseness**: Eliminate redundant phrasing; include only clinically relevant details.
+4. **Strict Format Adherence**: Each module enforces its own rigid output schema. No extra sections or commentary.
+
+---
+
+## 📂 Prompt Module Deep Dive (`prompts/`)
+
+### 1. `ap.ts` — Assessment & Plan (with Local RAG)
+**Triggered by**: `/assessment_and_plan` slash command or "Daily Progress Plan" choice card.
+
+This is the most sophisticated prompt in the system. It functions as a **local Retrieval-Augmented Generation (RAG)** engine.
+
+**How it works:**
+1. **Diagnose**: The model reads the conversation context and identifies the primary and secondary diagnoses.
+2. **Retrieve**: The entire `apTemplates.ts` knowledge base (130KB+, 140+ templates) is serialized and injected directly into the prompt context. The model is instructed to search this knowledge base for the template that best matches the patient's condition.
+3. **Customize**: If a matching template is found, the model **mirrors its exact structure, headings, and bullet points** (e.g., `* Admit:`, `* Monitoring:`, `* Meds:`, `* Consults:`, `* Diagnostics:`), then fills in the patient's actual vitals, lab values, and history from the conversation.
+4. **Generate**: If no template matches, it falls back to general medical knowledge to construct an evidence-based plan.
+
+**Output structure enforced by the prompt:**
+- `**Assessment & Plan**` with numbered acute issues, each containing a 1-2 sentence clinical justification followed by the plan.
+- `**Chronic Conditions**` section (only if mentioned in the conversation).
+- `**Disposition**` section with a detailed discharge plan and any barriers.
+
+---
+
+### 2. `handoff.ts` — I-PASS Written Handoff
+**Triggered by**: `/handoff` slash command or "IPASS Handoff" choice card.
+
+Generates a concise, written handoff structured in the **I-PASS format** — the evidence-based handoff protocol shown to reduce medical errors. The prompt instructs the model to generate content similar to a "sticky note" but in a structured handoff format.
+
+**Output structure enforced by the prompt:**
+- **Stability Level**: One of three triage categories — `Stable`, `Watcher`, or `Unstable`.
+- **One-Liner**: A hyper-concise summary: age/sex, chief complaint, key vitals, and key labs/imaging.
+- **Action List**: Each acute problem on its own line with its direct, specific management plan (medications with doses).
+- **Contingency Plan**: A single "if/then" sentence covering the most critical watch-outs (e.g., "If hypotensive, give 500cc IVF bolus × 2").
+
+---
+
+### 3. `presentation.ts` — Oral Rounds Presentation
+**Triggered by**: `/short_presentation` slash command or "Rounds Presentation" choice card.
+
+Generates a structured, polished oral presentation formatted to be **read aloud during rounds**. The prompt strictly prohibits the model from adding any introductory or concluding remarks.
+
+**Output structure enforced by the prompt:**
+- **One-Liner**: Age, sex, relevant PMH, chief complaint, and duration of symptoms in a single sentence.
+- **Subjective**: HPI in 1–3 sentences, focusing only on the most critical details.
+- **Objective**: Bulleted list of Vitals → Exam (significant positives/negatives only) → Labs (critical abnormalities only) → Imaging summary.
+- **Assessment & Plan**: Numbered list; each problem states the diagnosis followed by a brief, actionable plan for the day.
+
+---
+
+### 4. `stickyNote.ts` — Quick-Reference Sticky Note
+**Triggered by**: `/sticky_note` slash command or "Quick Sticky Note" choice card.
+
+Generates the most condensed output format — a **hyper-concise clinical dashboard card** for quick reference at the bedside. The prompt specifies the exact output structure with no deviation permitted.
+
+**Output structure enforced by the prompt:**
+- **Header line**: `age/sex with [Chief Complaint], [Key Vitals], [Key Labs]` — all on one line.
+- **`Acute:`** section: Each acute problem on its own line with its specific management, including medication names and doses.
+- **`Chronic:`** section: Each chronic condition with only the inpatient medication (no filler words like "continue").
+
+---
+
+### 5. `learning.ts` — Patient Summary & Master Board Algorithm
+This file contains **two distinct prompt functions** serving different purposes.
+
+#### 5a. `getPatientSummaryPrompt` — Structured JSON Session Summary
+**Triggered**: Automatically in the background after each patient encounter to generate a session title and structured summary.
+
+The model is instructed to output a **strict JSON object** (no markdown, no extra text) containing:
+- `summary`: A comprehensive, organized clinical summary with standard headings (HPI, PMH, Medications, Vitals/Exam, Labs & Imaging, Assessment & Plan).
+- `topic`: A single concise medical term representing the primary diagnosis (e.g., `"Acute Decompensated Heart Failure"`), used as the session title in the sidebar.
+
+#### 5b. `getMasterAlgorithmPrompt` — Board-Style Clinical Algorithm
+**Triggered by**: `/clinicalalgorithm [topic]` command.
+
+Switches the AI into the role of an **Expert Medical Educator and ABIM Board Test Strategist**. The model generates a step-by-step thinking algorithm for board examination preparation.
+
+The prompt enforces a **strict HTML output format** (not markdown) using Tailwind CSS class names for rendering directly inside the chat feed. The output structure is:
+- **Steps** (e.g., "Step 1: What is the TYPE of dizziness?")
+- **Diagnostic Buckets** (e.g., Vertigo → Peripheral vs. Central)
+- **Classic Vignette Examples** for each condition, each containing:
+  - `Vignette Keywords`: The classic exam presentation clues.
+  - `Best Next Step`: An actionable clinical decision.
+
+---
+
+### 6. `apTemplates.ts` — Local Clinical Knowledge Base
+A 130KB+ structured knowledge base containing **140+ evidence-based Assessment & Plan templates** organized across **16 medical specialty categories**:
+
+| Specialty | Example Templates |
+|---|---|
+| **Cardiovascular** | Cardiac Arrest/Post-ROSC, Cardiogenic Shock, Aortic Dissection, ACS/STEMI/NSTEMI, Hypertensive Emergency, A-Fib with RVR, Syncope, ADHF (HFrEF/HFpEF) |
+| **Pulmonary & Critical Care** | Septic Shock, ARDS, PE, COPD Exacerbation, Status Asthmaticus, CAP, Massive Hemoptysis, BiPAP/NIV |
+| **Neurology** | Acute Ischemic Stroke, ICH/SAH, Elevated ICP, Bacterial Meningitis, Status Epilepticus, GBS/Myasthenia Crisis, Delirium/AMS, Spinal Cord Compression |
+| **Gastroenterology & Hepatology** | Acute GI Bleed, Acute Pancreatitis, SBO, Hepatic Encephalopathy, SBP/HRS, Cholecystitis/Cholangitis, IBD Flare |
+| **Nephrology & Electrolytes** | AKI, Hypo/Hypernatremia, Hypo/Hyperkalemia, Metabolic Acidosis |
+| **Hematology & Oncology** | DVT/VTE, Neutropenic Fever, TTP/HUS, Sickle Cell Crisis |
+| **Infectious Disease** | Sepsis, HAP/VAP, HIV/AIDS complications, SSTI, Endocarditis |
+| **Endocrinology** | DKA, HHS, Adrenal Insufficiency, Thyroid Storm, Hypoglycemia |
+| **Rheumatology** | Gout/Pseudogout flare, Lupus flare, Vasculitis |
+| **Psychiatry & Substance Use** | Alcohol Withdrawal/CIWA, Opioid Withdrawal, Acute Psychosis |
+| **Geriatrics, Rehab & DME** | Falls, Frailty assessment, Pressure ulcers, DME planning |
+| **Goals of Care & Counseling** | DNR/DNI discussions, Comfort care, Hospice transition |
+| **Pharmacology Pearls** | High-risk drug interactions, Dosing in renal/hepatic failure |
+| **Exam & Note Blocks** | Standard physical exam templates, SOAP note components |
+| **Admin & Legal** | AMA documentation, Capacity assessment, Incident reporting |
+| **Other Specialties** | Dermatology, Ophthalmology, ENT, Orthopedics consult notes |
+
+Each template contains a structured plan with standardized headings (`Admit`, `Monitoring`, `Meds`, `Breathing Treatment`, `Consults`, `Diagnostics`) populated with specific medication names, doses, thresholds, and referenced clinical trials, making them directly customizable to the patient's live data.
 
 ---
 
 ## 🛠️ Technology Stack
 
-* **Frontend Framework**: [React 19](https://react.dev) (Functional components, hooks, refs, and contexts)
-* **Build System & Dev Server**: [Vite 6](https://vite.dev) (Fast, ESM-based bundling)
-* **Styling**: [Tailwind CSS](https://tailwindcss.com) (Loaded client-side via CDN with theme extensions defined in [index.html](file:///Users/sku/drsku6/EvidenceFlowAI/index.html))
-* **Language**: [TypeScript 5](https://www.typescriptlang.org) (Rigorous typing for application models, messages, and API payloads)
-* **LLM Integration**: [@google/genai SDK v1.25.0](https://www.npmjs.com/package/@google/genai) (Official Google GenAI SDK using `GoogleGenAI` class and streaming utilities)
-* **Markdown Rendering**: `react-markdown` and `remark-gfm` (Ensures clean, structured display of clinical guidelines, lists, and bold callouts in chat bubbles)
+| Layer | Technology |
+|---|---|
+| **Frontend Framework** | [React 19](https://react.dev) — Functional components, hooks (`useState`, `useRef`, `useEffect`, `useCallback`), and refs |
+| **Build System** | [Vite 6](https://vite.dev) — ESM-based fast bundler; exposes `VITE_GEMINI_API_KEY` to client bundle |
+| **Styling** | [Tailwind CSS](https://tailwindcss.com) — Custom theme palette loaded via CDN; defined in `index.html` |
+| **Language** | [TypeScript 5](https://www.typescriptlang.org) — Strict types for `Message`, `Session`, `ChatSession`, and API payloads |
+| **LLM Integration** | [@google/genai v1.25.0](https://www.npmjs.com/package/@google/genai) — `GoogleGenAI` class, streaming via `generateContentStream` and `chat.sendMessageStream` |
+| **Markdown Rendering** | `react-markdown` + `remark-gfm` — Renders clinical guidelines, tables, and lists cleanly in chat bubbles |
 
 ---
 
@@ -66,101 +189,92 @@ graph TD
 EvidenceFlowAI/
 ├── components/
 │   ├── Feedback.tsx        # Floating feedback modal with rating and comment capture
-│   └── icons.tsx           # Collection of SVG icons used throughout the UI
-├── prompts/                # Specialized prompt engineering templates
-│   ├── ap.ts               # Daily progress note Assessment & Plan format
-│   ├── handoff.ts          # SBAR/IPASS written handoff formatter
-│   ├── learning.ts         # Case summary JSON parser & Master Algorithm prompts
-│   ├── presentation.ts     # Polish oral presentation format for rounds
-│   └── stickyNote.ts       # Hyper-concise quick-reference format
+│   └── icons.tsx           # SVG icon library used throughout the UI
+├── prompts/                # All prompt engineering modules (see deep-dive above)
+│   ├── ap.ts               # A&P generator with RAG instruction and output schema
+│   ├── apTemplates.ts      # 130KB local knowledge base: 140+ templates, 16 specialties
+│   ├── handoff.ts          # I-PASS written handoff prompt and output schema
+│   ├── learning.ts         # JSON patient summary + HTML master algorithm prompts
+│   ├── presentation.ts     # Oral rounds presentation prompt and output schema
+│   └── stickyNote.ts       # Hyper-concise sticky note prompt and output schema
 ├── services/
-│   └── geminiService.ts    # Initializer and API router for the `@google/genai` client
-├── App.tsx                 # Main application UI layout, state manager, and resize logic
-├── constants.ts            # Defines the AI Persona directives and UI commands list
-├── index.html              # Entrypoint HTML including Tailwind configuration and module mounts
-├── index.tsx               # Root React renderer mounting App.tsx to the DOM
-├── types.ts                # TypeScript interfaces for Message, Session, and PatientSummary
-├── tsconfig.json           # TypeScript compilation parameters
-├── package.json            # Scripts, dependencies, and metadata configuration
-└── vite.config.ts          # Vite configuration exposing API keys to the client bundles
+│   └── geminiService.ts    # Gemini API client: chat session init, streaming, JSON schema output
+├── App.tsx                 # Main orchestrator: state, routing, UI layout, session management
+├── constants.ts            # EVIDENCEFLOW_PERSONA system instruction + COMMANDS list
+├── index.html              # HTML entrypoint, Tailwind CDN config, and module mount
+├── index.tsx               # React root renderer
+├── types.ts                # TypeScript interfaces: Message, Session, ChatSession, Sender
+├── tsconfig.json           # TypeScript compiler config (esModuleInterop, strict mode)
+├── package.json            # Dependencies, scripts, and project metadata
+└── vite.config.ts          # Vite config: API key injection and build settings
 ```
 
 ---
 
 ## 🧩 Component & Service Breakdown
 
-### 1. Main Application Orchestrator ([App.tsx](file:///Users/sku/drsku6/EvidenceFlowAI/App.tsx))
-Manages the application state, including:
-* **Sidebar Resize**: Implements a custom mouse move/up listener supporting smooth dragging of the navigation panel (between 200px and 500px).
-* **Patient Session Switcher**: Detects existing patient sessions in `localStorage`, creates unique session IDs using `crypto.randomUUID()`, and manages chat logs.
-* **Message Router**: Intercepts chat submissions. Regular text triggers Socratic responses, while slash commands (e.g. `/generate...`) trigger streaming document outputs.
-* **Message Bubbles**: Renders custom markdown configurations using a fluid `max-w-none` prose setup, handles errors, and includes a "copy-to-clipboard" action for quick copy/pasting into EHR systems.
+### 1. Main Application Orchestrator ([`App.tsx`](file:///Users/sku/drsku6/EvidenceFlowAI/App.tsx))
 
-### 2. Service Layer ([services/geminiService.ts](file:///Users/sku/drsku6/EvidenceFlowAI/services/geminiService.ts))
-Handles the interface with the `@google/genai` API:
-* **Session Initialization**: Creates a chat session using `ai.chats.create()`.
-* **Streaming Responses**: Invokes `ai.models.generateContentStream()` or `chat.sendMessageStream()` to stream AI responses to the UI in real-time, providing immediate feedback.
-* **Model Routing**: 
-  - Uses `gemini-3.5-flash` for all operations (conversational chats, structured summaries, documentation scribing, and algorithm generation) to ensure consistency, high accuracy, and low latency across the entire platform.
-* **Structured Output**: Forces `generatePatientSummary` to return structured JSON by defining `responseMimeType: 'application/json'` and declaring a strict JSON schema:
-  ```typescript
-  responseSchema: {
-      type: Type.OBJECT,
-      properties: {
-          summary: { type: Type.STRING },
-          topic: { type: Type.STRING }
-      },
-      required: ['summary', 'topic']
-  }
-  ```
+The central state machine. Key responsibilities:
 
-### 3. Capabilities & Prompt Architecture (`prompts/` & `constants.ts`)
-The prompts isolate the AI from direct user phrasing to enforce strict structure and medical accuracy:
-* **Socratic Persona (`EVIDENCEFLOW_PERSONA`)**: Instructs the model to act as a Socratic hospitalist mentor. Rather than lecturing, it asks questions categorized by organ systems, pre-test probability, and "can't miss" diagnoses to build clinical reasoning.
-* **Document Generators (`/assessment_and_plan`, `/handoff`, `/short_presentation`, `/sticky_note`)**: Utilize a unified wrapper declaring the AI as "EvidenceFlow"—a clinical decision support tool. It demands strict adherence to formatting rules, explicit grounding, and a concise layout tailored for medical professionals.
-  - **Local RAG Integration (`ap.ts`)**: The Assessment & Plan generator dynamically injects the `prompts/apTemplates.ts` knowledge base into the prompt context. The model is instructed to diagnose the patient, search the templates for a matching protocol, and perfectly mirror the template's structure while weaving in the patient's live data.
-* **Educational Review (`/clinicalalgorithm`)**: Commands `gemini-3.5-flash` to output an instructional board-prep algorithm. It enforces structured HTML using Tailwind CSS classes, comparative buckets, vignette keywords, and actionable "Best Next Steps".
-* **Advanced Clinical Tools**:
-  - **`/run_simulation`**: Presents a dynamic, interactive clinical emergency simulation based on the user's prompt (e.g., "The patient is now hypotensive.").
-  - **`/ask_the_expert`**: Answers nuanced, "unwritten rules" questions about medicine.
+- **Session Management**: Creates sessions using `crypto.randomUUID()`, persists them to `localStorage` under `EvidenceFlowAI-sessions`, and restores them on reload. Implements auto-recovery: if an active session ID is lost (e.g., after a cache clear), the app automatically falls back to the first available session or creates a new one.
+- **Choice Card Interception**: Detects the first user message in a new session and renders an interactive **Choice Card** in the feed — prompting the clinician to select their desired output mode (Socratic Mentorship, Assessment & Plan, Rounds Presentation, IPASS Handoff, Quick Sticky Note, or Clinical Simulation) before the AI responds.
+- **Message Router**: After mode selection, routes subsequent messages either to the Socratic chat stream or to the appropriate prompt module for document generation.
+- **Sidebar Resize**: Custom mouse drag logic allows the sidebar to be resized between 200px and 500px.
+- **Copy-to-Clipboard**: Every AI response has a one-click copy action for fast pasting into EHR systems.
+
+### 2. Service Layer ([`services/geminiService.ts`](file:///Users/sku/drsku6/EvidenceFlowAI/services/geminiService.ts))
+
+Handles all Gemini API communication:
+
+- **`createChatSession(history)`**: Initializes a persistent `ai.chats.create()` session with the `EVIDENCEFLOW_PERSONA` as the system instruction and the existing conversation history pre-loaded.
+- **`sendMessageStream(chatSession, message)`**: Sends a message to the active chat session and streams tokens back to the UI in real-time using `chat.sendMessageStream()`.
+- **`generateStream(prompt)`**: Sends a one-shot prompt (for document generation commands) using `ai.models.generateContentStream()` and streams the response.
+- **`generatePatientSummary(history)`**: Calls `ai.models.generateContent()` with `responseMimeType: 'application/json'` and a strict JSON schema to force structured output for session titling and summary generation.
+
+### 3. Prompt Architecture Summary
+
+| File | Mode | Output Format | Special Mechanism |
+|---|---|---|---|
+| `constants.ts` | Socratic Preceptor | Conversational markdown | System instruction with virtual triage |
+| `ap.ts` | Clinical Architect | Structured markdown (A&P) | Local RAG: 130KB template injection |
+| `handoff.ts` | Clinical Architect | I-PASS markdown | Stability triage + contingency logic |
+| `presentation.ts` | Clinical Architect | Oral-ready markdown | One-liner → SOAP format |
+| `stickyNote.ts` | Clinical Architect | Ultra-concise markdown | Fixed schema, no filler words |
+| `learning.ts` (summary) | Background | Strict JSON | `responseMimeType: application/json` + schema |
+| `learning.ts` (algorithm) | Clinical Educator | Raw HTML + Tailwind | Step/bucket/vignette structure |
 
 ---
 
-## 🔒 Security & Safe Deployment Checklist
+## 🔒 Security & Safe Deployment
 
-For open-sourcing or deployment to staging/production, the following configurations must be adhered to:
-
-### 1. API Key Security
-* **Never commit `.env` or `.env.local` files**.
-* The project's [.gitignore](file:///Users/sku/drsku6/EvidenceFlowAI/.gitignore) is pre-configured to ignore all environment files (`.env*`).
-* During development, duplicate `.env.example` into a local-only `.env.local` file:
+### API Key Management
+- **Never commit `.env.local`**. The `.gitignore` is pre-configured to exclude all `.env*` files.
+- During development, create `.env.local` in the project root:
   ```env
   GEMINI_API_KEY=your_actual_api_key_here
   ```
-* Vite will read this at build time and inject it into the client-side bundle via the define compilation step.
+- Vite reads this at build time and injects it into the client bundle via `import.meta.env.VITE_GEMINI_API_KEY`.
 
-### 2. Clinical Data Privacy (HIPAA)
-* **Strict Prohibition of PHI/PII**: **Under no circumstances should Protected Health Information (PHI) or Personally Identifiable Information (PII) be entered into the application.** All user inputs (patient case descriptions) are transmitted to Google's Gemini API.
-* **Zero Patient Data Storing**: EvidenceFlowAI is entirely client-side. Chat logs and inputs never hit a centralized project database; they reside exclusively in the clinician's browser `localStorage`.
-* **External API Transmission**: Inputs are transmitted to Google's Gemini API endpoints. When deploying this tool in an institutional setting, ensure the Google Cloud project's data-use terms comply with your institutional HIPAA/Business Associate Agreements (BAA) so that inputs are not used for public model training.
+### Clinical Data Privacy (HIPAA)
+> **⚠️ CRITICAL: DO NOT ENTER REAL PATIENT DATA (PHI/PII).**
+
+- **Client-Side Only**: All chat logs and session data live exclusively in the browser's `localStorage`. No data is ever written to an external database.
+- **API Transmission**: User inputs are transmitted to Google's Gemini API endpoints. For institutional deployment, ensure your Google Cloud project is covered by a **Business Associate Agreement (BAA)** to prevent inputs from being used in public model training.
+- **Use De-identified Cases**: Always use fictional or fully de-identified patient cases when demoing, teaching, or testing.
 
 ---
 
 ## 🚀 Installation & Local Development
 
 ### 1. Clone & Setup
-Ensure you have Node.js installed on your machine.
 ```bash
-# Clone the repository (if not already local)
 git clone git@github.com:drsku6/EvidenceFlowAI.git
 cd EvidenceFlowAI
-
-# Install dependencies
 npm install
 ```
 
 ### 2. Environment Configuration
-Create a `.env.local` file in the root directory:
 ```bash
 touch .env.local
 ```
@@ -170,15 +284,13 @@ GEMINI_API_KEY=AIzaSy...
 ```
 
 ### 3. Start Development Server
-Run the local Vite dev server:
 ```bash
 npm run dev
 ```
-The application will launch on your local host (usually `http://localhost:3000`).
+The app launches at `http://localhost:3000`.
 
 ### 4. Build for Production
-To package the app for deployment (to Google Cloud Storage, Firebase Hosting, Netlify, etc.):
 ```bash
 npm run build
 ```
-This will compile, minify, and output static files into the `dist/` directory, ready to be hosted on any static file server.
+Compiles and minifies to `dist/` for deployment on any static host (Firebase Hosting, Google Cloud Storage, Netlify, etc.).
