@@ -35,9 +35,14 @@ graph TD
 3. **Execution**:
    - If **Socratic Mentorship** is clicked, the app sends the patient details to the Socratic chat session (`gemini-3.5-flash`).
    - If any **Generative Command** is clicked, the app appends the corresponding command (e.g., `/assessment_and_plan`) and streams the formatted output.
-4. **Local Persistence**: Sessions, chat logs, summaries, and generated algorithms are automatically serialized and saved to `localStorage` under `hippocrates-sessions`.
+4. **Local Persistence**: Patient sessions, chat logs, summaries, and generated algorithms are automatically serialized and saved to `localStorage` under `hippocrates-sessions`.
 5. **Document Generation**: If a user runs a slash command at any point (e.g., `/handoff`), the system retrieves the full chat history, formats it, and feeds it into a specialized prompt template from the `prompts/` directory to generate structured, guidelines-compliant clinical documents.
-6. **Educational Review (Master Algorithm)**: The user can type `/clinicalalgorithm [topic]` directly in the chat input. The system prompts the `gemini-3.5-flash` model to build an interactive, high-yield clinical thinking path (ABIM board-prep style) for that topic, rendering it directly inside the message feed using Tailwind CSS styling.
+6. **Educational Review (Master Algorithm)**: The user can type `/clinicalalgorithm [topic]` directly in the chat input. The system prompts the `gemini-3.5-flash` model to build an interactive, high-yield clinical thinking path (ABIM board-prep style) for that topic, rendering it directly inside the message feed.
+
+### 2. UI/UX Architecture
+* **Typography**: Employs a Claude-style dual font system. UI elements (sidebars, headers) use the modern **Inter** sans-serif font, while clinical outputs and model responses use **Source Serif 4** for high legibility during dense medical chart review.
+* **Layout**: A responsive, fluid-width workspace that stretches to fill wide monitors while maintaining balanced side padding (`px-6` to `2xl:px-32`), completely eliminating unused empty space.
+* **Ambient Styling**: Features subtle radial gradient blue glows behind the interface and ultra-thin custom scrollbars to establish a premium, clinical feel.
 
 ---
 
@@ -84,9 +89,9 @@ hippocrates/
 ### 1. Main Application Orchestrator ([App.tsx](file:///Users/sku/drsku6/hippocrates/App.tsx))
 Manages the application state, including:
 * **Sidebar Resize**: Implements a custom mouse move/up listener supporting smooth dragging of the navigation panel (between 200px and 500px).
-* **Session Switcher**: Detects existing sessions in `localStorage`, creates unique session IDs using `crypto.randomUUID()`, and manages chat logs.
+* **Patient Session Switcher**: Detects existing patient sessions in `localStorage`, creates unique session IDs using `crypto.randomUUID()`, and manages chat logs.
 * **Message Router**: Intercepts chat submissions. Regular text triggers Socratic responses, while slash commands (e.g. `/generate...`) trigger streaming document outputs.
-* **Message Bubbles**: Renders custom markdown configurations, handles errors, and includes a "copy-to-clipboard" action for quick copy/pasting into EHR systems.
+* **Message Bubbles**: Renders custom markdown configurations using a fluid `max-w-none` prose setup, handles errors, and includes a "copy-to-clipboard" action for quick copy/pasting into EHR systems.
 
 ### 2. Service Layer ([services/geminiService.ts](file:///Users/sku/drsku6/hippocrates/services/geminiService.ts))
 Handles the interface with the `@google/genai` API:
