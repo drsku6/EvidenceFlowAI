@@ -1,6 +1,6 @@
-# ⚕️ EvidenceFlowAI: AI Hospitalist Mentor & Clinical Co-Pilot
+# ⚕️ EvidenceFlowAI: The Open-Source Clinical AI Operating System
 
-**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot built on **Gemini (gemini-3.5-flash)**. It operates in two core modes: a **Socratic Clinical Mentor** that builds diagnostic reasoning through guided questioning, and a **Clinical Architect** that generates structured, evidence-based medical documents on command. Designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant.
+**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot built on **Gemini (gemini-3.5-flash)**. It operates as a decoupled clinical workspace, featuring a Configurable Mentorship Layer for guided reasoning and Native System Utilities for generating structured, evidence-based medical documents on command. Designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant.
 
 > [!WARNING]
 > **DO NOT ENTER PROTECTED HEALTH INFORMATION (PHI) OR PERSONALLY IDENTIFIABLE INFORMATION (PII).**
@@ -10,15 +10,15 @@
 
 ## ✨ Key Features
 
-### 🎓 Mode 1: Socratic Preceptor (Default)
+### 🎓 Configurable Mentorship Layer: Socratic Preceptor
 When you describe a patient case, EvidenceFlowAI performs a silent **"Virtual Triage"** — identifying the sickest problem, "can't miss" diagnoses, and critical data gaps. Its first response is always a series of probing, Socratic questions organized by organ system and pre-test probability. It references major clinical trials by name (RALES, COURAGE, FACTT), applies validated risk scores (CURB-65, GRACE, TIMI), and connects every recommendation to underlying pathophysiology.
 
-### 📝 Mode 2: Clinical Architect — Generative Document Commands
+### 📝 Native System Utilities: Generative Document Commands
 On command, EvidenceFlowAI reads your entire conversation history and generates structured, EHR-ready clinical documents:
 
 | Command | Output |
 |---|---|
-| `/assessment_and_plan` | Comprehensive, problem-based A&P using **local RAG** (see below) |
+| `/assessment_and_plan` | Comprehensive, problem-based A&P using a mounted local data layer (see below) |
 | `/short_presentation` | Polished oral presentation formatted for reading aloud on morning rounds |
 | `/handoff` | Concise I-PASS written handoff with stability level and contingency plan |
 | `/sticky_note` | Hyper-concise bedside reference card with acute/chronic problem list |
@@ -26,8 +26,8 @@ On command, EvidenceFlowAI reads your entire conversation history and generates 
 | `/ask_the_expert` | Answers nuanced "unwritten rules" questions about inpatient medicine |
 | `/run_simulation` | Interactive clinical emergency simulation (e.g., "The patient is now hypotensive.") |
 
-### 🧬 Local RAG: A&P Knowledge Base
-The `/assessment_and_plan` command uses a **local Retrieval-Augmented Generation** architecture. A 130KB+ knowledge base (`apTemplates.ts`) containing **140+ evidence-based A&P templates** across **16 specialty categories** is injected into the Gemini context window. The model diagnoses the patient from the conversation, searches the knowledge base for a matching protocol, and dynamically customizes the template's exact structure with the patient's live vitals, labs, and history.
+### 🧬 The Execution Engine: Mounted Local Data Layer
+The `/assessment_and_plan` command bypasses blanket RAG setups in favor of a true workspace OS execution engine. A 130KB+ local data layer (`apTemplates.ts`) containing **140+ evidence-based A&P templates** across **16 specialty categories** is injected into the Gemini context window. The model diagnoses the patient from the conversation, searches the knowledge base for a matching protocol, and dynamically customizes the template's exact structure with the patient's live vitals, labs, and history.
 
 **Specialties covered:** Cardiovascular · Pulmonary & Critical Care · Neurology · Gastroenterology & Hepatology · Nephrology & Electrolytes · Hematology & Oncology · Infectious Disease · Endocrinology · Rheumatology · Psychiatry & Substance Use · Geriatrics/Rehab/DME · Goals of Care · Pharmacology Pearls · Exam & Note Blocks · Admin & Legal · Other Specialties
 
@@ -88,7 +88,7 @@ Outputs static files to `dist/` — ready for Firebase Hosting, Netlify, Google 
 ### The Prompt Architecture
 EvidenceFlowAI's intelligence lives in the `prompts/` directory. Each document type has its own prompt module enforcing a strict output schema. All document-generation prompts share a **unified Master Prompt** declaring the AI's persona as "EvidenceFlow" — a clinical decision support tool with four non-negotiable directives: clinical accuracy, structured formatting, conciseness, and strict schema adherence.
 
-See [`PROJECT_DOCUMENTATION.md`](PROJECT_DOCUMENTATION.md) for the full technical deep-dive including per-prompt output schemas, the RAG pipeline, and the service layer design.
+See [`PROJECT_DOCUMENTATION.md`](PROJECT_DOCUMENTATION.md) for the full technical deep-dive including per-prompt output schemas, the execution engine runtime, and the service layer design.
 
 ### Unified Model Architecture
 Every action — Socratic mentorship, patient summaries, I-PASS handoffs, A&P generation, and board-style algorithms — runs on **`gemini-3.5-flash`** for consistent low-latency performance.

@@ -1,7 +1,7 @@
-# EvidenceFlowAI: AI Hospitalist Mentor & Clinical Co-Pilot
+# EvidenceFlowAI: The Open-Source Clinical AI Operating System
 ## Project Documentation
 
-**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot. Built on **Gemini (gemini-3.5-flash)** for blazing-fast inference, EvidenceFlowAI uses a sophisticated, multi-prompt architecture to shift between two core operational modes: a **Socratic clinical mentor** that builds reasoning skills through guided questioning, and a **Clinical Architect** that generates structured, evidence-based medical documentation on command. It is designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant at the bedside or during rounds.
+**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot. Built on **Gemini (gemini-3.5-flash)** for blazing-fast inference, EvidenceFlowAI uses a sophisticated, multi-prompt architecture to shift between two operational runtimes: a **Configurable Mentorship Layer** that builds reasoning skills through guided questioning, and **Native System Utilities** that generate structured, evidence-based medical documentation on command. It is designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant at the bedside or during rounds.
 
 ---
 
@@ -36,9 +36,9 @@ graph TD
 
 ---
 
-## 🧠 The Two Operational Modes
+## 🧠 The Two Operational Runtimes
 
-### Mode 1: Socratic Preceptor (Default Conversational Mode)
+### Runtime 1: Configurable Mentorship Layer (Socratic Preceptor)
 Defined in [`constants.ts`](file:///Users/sku/drsku6/EvidenceFlowAI/constants.ts) via the `EVIDENCEFLOW_PERSONA` system instruction.
 
 When a clinician enters a patient case, EvidenceFlowAI does **not** give a direct answer. Instead, it performs a silent **"Virtual Triage"** in the background to identify:
@@ -52,7 +52,7 @@ This mode persists for the entire conversation, allowing the clinician to build 
 
 ---
 
-### Mode 2: Clinical Architect (Generative Document Mode)
+### Runtime 2: Native System Utilities (Generative Document Commands)
 On command (via the Choice Card UI or a slash command), the app assembles the full conversation history and passes it to a specialized prompt module in the `prompts/` directory. Each module shares a **unified Master Prompt** that declares the AI's role as "EvidenceFlow" — a clinical decision support tool and medical scribe — with strict core directives:
 
 1. **Clinical Accuracy First**: The assessment/diagnosis must be grounded solely in the provided conversation context. No hallucination. For the plan, it applies current evidence-based guidelines.
@@ -64,14 +64,14 @@ On command (via the Choice Card UI or a slash command), the app assembles the fu
 
 ## 📂 Prompt Module Deep Dive (`prompts/`)
 
-### 1. `ap.ts` — Assessment & Plan (with Local RAG)
+### 1. `ap.ts` — Assessment & Plan (with Mounted Data Layer)
 **Triggered by**: `/assessment_and_plan` slash command or "Daily Progress Plan" choice card.
 
-This is the most sophisticated prompt in the system. It functions as a **local Retrieval-Augmented Generation (RAG)** engine.
+This is the most sophisticated prompt in the system. It bypasses blanket RAG setups, functioning as a true workspace OS **execution engine**.
 
 **How it works:**
 1. **Diagnose**: The model reads the conversation context and identifies the primary and secondary diagnoses.
-2. **Retrieve**: The entire `apTemplates.ts` knowledge base (130KB+, 140+ templates) is serialized and injected directly into the prompt context. The model is instructed to search this knowledge base for the template that best matches the patient's condition.
+2. **Retrieve**: The entire `apTemplates.ts` local data layer (130KB+, 140+ templates) is serialized and injected directly into the prompt context. The model is instructed to search this knowledge base for the template that best matches the patient's condition.
 3. **Customize**: If a matching template is found, the model **mirrors its exact structure, headings, and bullet points** (e.g., `* Admit:`, `* Monitoring:`, `* Meds:`, `* Consults:`, `* Diagnostics:`), then fills in the patient's actual vitals, lab values, and history from the conversation.
 4. **Generate**: If no template matches, it falls back to general medical knowledge to construct an evidence-based plan.
 
@@ -144,8 +144,8 @@ The prompt enforces a **strict HTML output format** (not markdown) using Tailwin
 
 ---
 
-### 6. `apTemplates.ts` — Local Clinical Knowledge Base
-A 130KB+ structured knowledge base containing **140+ evidence-based Assessment & Plan templates** organized across **16 medical specialty categories**:
+### 6. `apTemplates.ts` — Default Protocol Registry (Mounted Data Layer)
+A 130KB+ structured local data layer containing **140+ evidence-based Assessment & Plan templates** organized across **16 medical specialty categories**:
 
 | Specialty | Example Templates |
 |---|---|
@@ -234,13 +234,13 @@ Handles all Gemini API communication:
 
 ### 3. Prompt Architecture Summary
 
-| File | Mode | Output Format | Special Mechanism |
+| File | Runtime | Output Format | Special Mechanism |
 |---|---|---|---|
-| `constants.ts` | Socratic Preceptor | Conversational markdown | System instruction with virtual triage |
-| `ap.ts` | Clinical Architect | Structured markdown (A&P) | Local RAG: 130KB template injection |
-| `handoff.ts` | Clinical Architect | I-PASS markdown | Stability triage + contingency logic |
-| `presentation.ts` | Clinical Architect | Oral-ready markdown | One-liner → SOAP format |
-| `stickyNote.ts` | Clinical Architect | Ultra-concise markdown | Fixed schema, no filler words |
+| `constants.ts` | Configurable Mentorship Layer | Conversational markdown | System instruction with virtual triage |
+| `ap.ts` | Native System Utility | Structured markdown (A&P) | Local Data Layer: 130KB template injection |
+| `handoff.ts` | Native System Utility | I-PASS markdown | Stability triage + contingency logic |
+| `presentation.ts` | Native System Utility | Oral-ready markdown | One-liner → SOAP format |
+| `stickyNote.ts` | Native System Utility | Ultra-concise markdown | Fixed schema, no filler words |
 | `learning.ts` (summary) | Background | Strict JSON | `responseMimeType: application/json` + schema |
 | `learning.ts` (algorithm) | Clinical Educator | Raw HTML + Tailwind | Step/bucket/vignette structure |
 
