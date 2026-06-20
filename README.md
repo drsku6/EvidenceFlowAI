@@ -91,7 +91,7 @@ EvidenceFlowAI's intelligence lives in the `prompts/` directory. Each document t
 See [`PROJECT_DOCUMENTATION.md`](PROJECT_DOCUMENTATION.md) for the full technical deep-dive including per-prompt output schemas, the execution engine runtime, and the service layer design.
 
 ### Unified Model Architecture
-Every action — Socratic mentorship, patient summaries, I-PASS handoffs, A&P generation, and board-style algorithms — runs on **`gemini-3.5-flash`** for consistent low-latency performance.
+EvidenceFlowAI supports both **`gemini-3.5-flash`** and **`gemini-3.1-pro`**. Every action — Socratic mentorship, patient summaries, I-PASS handoffs, A&P generation, and board-style algorithms — runs on your selected model. `gemini-3.5-flash` is recommended for low-latency performance; `gemini-3.1-pro` is available for maximum reasoning depth.
 
 ---
 
