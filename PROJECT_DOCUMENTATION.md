@@ -170,6 +170,18 @@ Each template contains a structured plan with standardized headings (`Admit`, `M
 
 ---
 
+### 7. `/ask_the_expert` and `/run_simulation` — Runtime 1 Commands (No Prompt Module)
+**Triggered by**: Typing `/ask_the_expert [question]` or `/run_simulation [scenario]` directly.
+
+These two commands have no dedicated prompt module in `prompts/`. They are handled entirely by **Runtime 1** — the persistent `ai.chats.create()` session initialized with the `EVIDENCEFLOW_PERSONA` system instruction.
+
+- **`/ask_the_expert`**: The question is sent directly to `chat.sendMessageStream()`. The Socratic Preceptor persona handles it natively — answering with the "unwritten rules" framing, clinical trial references, and first-principles reasoning baked into the system instruction.
+- **`/run_simulation`**: The scenario prompt is sent directly to `chat.sendMessageStream()`. The persona shifts into simulation mode, presenting a dynamic clinical emergency and responding to the user's real-time decisions within the same conversation thread.
+
+Both commands intentionally bypass the one-shot generation pipeline to preserve the interactive, multi-turn conversation context.
+
+---
+
 ## 🛠️ Technology Stack
 
 | Layer | Technology |
@@ -218,7 +230,7 @@ EvidenceFlowAI/
 The central state machine. Key responsibilities:
 
 - **Session Management**: Creates sessions using `crypto.randomUUID()`, persists them to `localStorage` under `EvidenceFlowAI-sessions`, and restores them on reload. Implements auto-recovery: if an active session ID is lost (e.g., after a cache clear), the app automatically falls back to the first available session or creates a new one.
-- **Choice Card Interception**: Detects the first user message in a new session and renders an interactive **Choice Card** in the feed — prompting the clinician to select their desired output mode (Socratic Mentorship, Assessment & Plan, Rounds Presentation, IPASS Handoff, Quick Sticky Note, or Clinical Simulation) before the AI responds.
+- **Choice Card Interception**: When the first user message in a session does not begin with a slash command, `App.tsx` intercepts it before sending to the AI. Instead of triggering a Gemini API call, it renders an interactive **Choice Card** directly in the chat feed. The card presents 7 options — 5 Native System Utility commands (Runtime 2), plus Socratic Mentorship and Clinical Simulation (both Runtime 1). Only after the user selects a mode does the app route the original patient description to the appropriate runtime. This design separates intent declaration from AI response — the system never guesses what the clinician needs from a patient description.
 - **Message Router**: After mode selection, routes subsequent messages either to the Socratic chat stream or to the appropriate prompt module for document generation.
 - **Sidebar Resize**: Custom mouse drag logic allows the sidebar to be resized between 200px and 500px.
 - **Copy-to-Clipboard**: Every AI response has a one-click copy action for fast pasting into EHR systems.
@@ -228,21 +240,23 @@ The central state machine. Key responsibilities:
 Handles all Gemini API communication:
 
 - **`createChatSession(history)`**: Initializes a persistent `ai.chats.create()` session with the `EVIDENCEFLOW_PERSONA` as the system instruction and the existing conversation history pre-loaded.
-- **`sendMessageStream(chatSession, message)`**: Sends a message to the active chat session and streams tokens back to the UI in real-time using `chat.sendMessageStream()`.
-- **`generateStream(prompt)`**: Sends a one-shot prompt (for document generation commands) using `ai.models.generateContentStream()` and streams the response.
+- **`sendMessageStream(chat, message, conversationHistory)`**: The message router. Internally calls `getPromptForCommand()` to determine if the message is a slash command. If yes, assembles the full conversation history string, builds the specialized prompt, and calls `ai.models.generateContentStream()` for one-shot document generation. If no, forwards the message directly to `chat.sendMessageStream()` for the persistent Socratic conversation.
+- **`generateMasterAlgorithm(input)`**: Calls `ai.models.generateContent()` to produce a board-style HTML algorithm from a topic string or patient case. Used by the `/clinicalalgorithm` command as a standalone generation call.
 - **`generatePatientSummary(history)`**: Calls `ai.models.generateContent()` with `responseMimeType: 'application/json'` and a strict JSON schema to force structured output for session titling and summary generation.
 
 ### 3. Prompt Architecture Summary
 
-| File | Runtime | Output Format | Special Mechanism |
+| File / Command | Runtime | Output Format | Special Mechanism |
 |---|---|---|---|
-| `constants.ts` | Configurable Mentorship Layer | Conversational markdown | System instruction with virtual triage |
-| `ap.ts` | Native System Utility | Structured markdown (A&P) | Local Data Layer: 130KB template injection |
-| `handoff.ts` | Native System Utility | I-PASS markdown | Stability triage + contingency logic |
-| `presentation.ts` | Native System Utility | Oral-ready markdown | One-liner → SOAP format |
-| `stickyNote.ts` | Native System Utility | Ultra-concise markdown | Fixed schema, no filler words |
-| `learning.ts` (summary) | Background | Strict JSON | `responseMimeType: application/json` + schema |
-| `learning.ts` (algorithm) | Clinical Educator | Raw HTML + Tailwind | Step/bucket/vignette structure |
+| `constants.ts` | Runtime 1 — Socratic Preceptor | Conversational markdown | `EVIDENCEFLOW_PERSONA` system instruction · Virtual Triage |
+| `/ask_the_expert` | Runtime 1 — Socratic Preceptor | Conversational markdown | No prompt module — handled by chat session with persona |
+| `/run_simulation` | Runtime 1 — Socratic Preceptor | Conversational markdown | No prompt module — handled by chat session with persona |
+| `ap.ts` | Runtime 2 — Native System Utility | Structured markdown (A&P) | 130KB data layer injection · Diagnose → Match → Customize |
+| `handoff.ts` | Runtime 2 — Native System Utility | I-PASS markdown | Stability triage + contingency logic |
+| `presentation.ts` | Runtime 2 — Native System Utility | Oral-ready markdown | One-liner → SOAP format |
+| `stickyNote.ts` | Runtime 2 — Native System Utility | Ultra-concise markdown | Fixed schema, no filler words |
+| `learning.ts` (summary) | Background — auto | Strict JSON | `responseMimeType: application/json` + response schema |
+| `learning.ts` (algorithm) | Runtime 2 — Native System Utility | Raw HTML + Tailwind | Step/bucket/vignette structure for ABIM board prep |
 
 ---
 

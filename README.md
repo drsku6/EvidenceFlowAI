@@ -1,6 +1,6 @@
 # ⚕️ EvidenceFlowAI: The Open-Source Clinical AI Operating System
 
-**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot built on **Gemini (gemini-3.5-flash)**. It operates as a decoupled clinical workspace, featuring a Configurable Mentorship Layer for guided reasoning and Native System Utilities for generating structured, evidence-based medical documents on command. Designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant.
+**EvidenceFlowAI** is an open-source, persona-driven clinical AI copilot built on **Gemini**. It operates as a decoupled clinical workspace with two distinct operational runtimes: a **Configurable Mentorship Layer** (Socratic Preceptor) for guided clinical reasoning, and **Native System Utilities** for generating structured, EHR-ready documents on command. When you describe a patient, the app intercepts the input and surfaces a **Choice Card** — letting you declare your operational mode before the AI responds. Designed for hospitalists, residents, and medical educators who need a real-time thinking partner and documentation assistant at the bedside.
 
 > [!WARNING]
 > **DO NOT ENTER PROTECTED HEALTH INFORMATION (PHI) OR PERSONALLY IDENTIFIABLE INFORMATION (PII).**
@@ -13,6 +13,23 @@
 ### 🎓 Configurable Mentorship Layer: Socratic Preceptor
 When you describe a patient case, EvidenceFlowAI performs a silent **"Virtual Triage"** — identifying the sickest problem, "can't miss" diagnoses, and critical data gaps. Its first response is always a series of probing, Socratic questions organized by organ system and pre-test probability. It references major clinical trials by name (RALES, COURAGE, FACTT), applies validated risk scores (CURB-65, GRACE, TIMI), and connects every recommendation to underlying pathophysiology.
 
+Two additional commands also run on this runtime — the same persistent chat session, no document schema:
+- `/ask_the_expert` — answers nuanced "unwritten rules" questions about inpatient medicine using the model's full native reasoning
+- `/run_simulation` — launches an interactive scenario where the AI presents a dynamic clinical emergency and responds to your real-time decisions
+
+### 🃏 Choice Card: Guided Mode Selection
+When you describe a patient for the first time in a session (without a slash command), the app intercepts the input and renders an interactive **Choice Card** in the chat feed — prompting you to declare your intent before the AI responds. This separates mode selection from AI response; the system never guesses what you need from a patient description.
+
+| Option | Runtime |
+|---|---|
+| 🎓 Socratic Mentorship | Runtime 1 — Configurable Mentorship Layer |
+| 📝 Daily Progress Plan (`/assessment_and_plan`) | Runtime 2 — Native System Utility |
+| 📢 Rounds Presentation (`/short_presentation`) | Runtime 2 — Native System Utility |
+| 🔄 IPASS Handoff (`/handoff`) | Runtime 2 — Native System Utility |
+| 📌 Quick Sticky Note (`/sticky_note`) | Runtime 2 — Native System Utility |
+| 🧠 Clinical Algorithm (`/clinicalalgorithm`) | Runtime 2 — Native System Utility |
+| 🚨 Clinical Simulation (`/run_simulation`) | Runtime 1 — Configurable Mentorship Layer |
+
 ### 📝 Native System Utilities: Generative Document Commands
 On command, EvidenceFlowAI reads your entire conversation history and generates structured, EHR-ready clinical documents:
 
@@ -23,8 +40,6 @@ On command, EvidenceFlowAI reads your entire conversation history and generates 
 | `/handoff` | Concise I-PASS written handoff with stability level and contingency plan |
 | `/sticky_note` | Hyper-concise bedside reference card with acute/chronic problem list |
 | `/clinicalalgorithm [topic]` | Step-by-step, ABIM board-prep algorithm with vignettes and best next steps |
-| `/ask_the_expert` | Answers nuanced "unwritten rules" questions about inpatient medicine |
-| `/run_simulation` | Interactive clinical emergency simulation (e.g., "The patient is now hypotensive.") |
 
 ### 🧬 The Execution Engine: Mounted Local Data Layer
 The `/assessment_and_plan` command bypasses blanket RAG setups in favor of a true workspace OS execution engine. A 130KB+ local data layer (`apTemplates.ts`) containing **140+ evidence-based A&P templates** across **16 specialty categories** is injected into the Gemini context window. The model diagnoses the patient from the conversation, searches the knowledge base for a matching protocol, and dynamically customizes the template's exact structure with the patient's live vitals, labs, and history.
@@ -89,6 +104,13 @@ Outputs static files to `dist/` — ready for Firebase Hosting, Netlify, Google 
 EvidenceFlowAI's intelligence lives in the `prompts/` directory. Each document type has its own prompt module enforcing a strict output schema. All document-generation prompts share a **unified Master Prompt** declaring the AI's persona as "EvidenceFlow" — a clinical decision support tool with four non-negotiable directives: clinical accuracy, structured formatting, conciseness, and strict schema adherence.
 
 See [`PROJECT_DOCUMENTATION.md`](PROJECT_DOCUMENTATION.md) for the full technical deep-dive including per-prompt output schemas, the execution engine runtime, and the service layer design.
+
+### The Two Runtime Patterns
+EvidenceFlowAI uses two distinct Gemini API call patterns depending on the selected mode:
+
+- **Runtime 1 — Socratic Preceptor (`/ask_the_expert`, `/run_simulation`):** Uses `ai.chats.create()` to maintain a persistent multi-turn session. The `EVIDENCEFLOW_PERSONA` system instruction is loaded once at session start. All messages stream through `chat.sendMessageStream()`, preserving full conversation context across turns.
+
+- **Runtime 2 — Document Commands (`/assessment_and_plan`, `/handoff`, `/short_presentation`, `/sticky_note`, `/clinicalalgorithm`):** Uses `ai.models.generateContentStream()` for one-shot generation. On each command, the full conversation history is assembled as a plain-text string and injected into a fresh specialized prompt module from `prompts/`. There is no persistent session state — the context is rebuilt from the conversation log on every call.
 
 ### Unified Model Architecture
 EvidenceFlowAI supports both **`gemini-3.5-flash`** and **`gemini-3.1-pro`**. Every action — Socratic mentorship, patient summaries, I-PASS handoffs, A&P generation, and board-style algorithms — runs on your selected model. `gemini-3.5-flash` is recommended for low-latency performance; `gemini-3.1-pro` is available for maximum reasoning depth.
